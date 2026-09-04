@@ -13,11 +13,13 @@ SELF_MODULES := \
 	compiler/src/10_lexer.lith \
 	compiler/src/20_symbols_ir.lith \
 	compiler/src/30_operators.lith \
+	compiler/src/30_core_values.lith \
 	compiler/src/31_expressions.lith \
 	compiler/src/40_memory_arrays.lith \
 	compiler/src/50_match_print.lith \
 	compiler/src/60_statements.lith \
 	compiler/src/70_scanner.lith \
+	compiler/src/75_global_constants.lith \
 	compiler/src/80_emitter_main.lith
 SELF_SRC := $(BUILD)/lithc.lith
 SELF_LITHC := $(BUILD)/lithc
