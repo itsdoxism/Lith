@@ -12,6 +12,7 @@ fn precedence [str op] int [
     if [str.eq op, 'mul'] [ = 5 ]
     if [str.eq op, 'div'] [ = 5 ]
     if [str.eq op, 'mod'] [ = 5 ]
+    if [str.eq op, 'as'] [ = 6 ]
     = 0
 ]
 
@@ -19,6 +20,7 @@ fn starts_expr [int unused] int [
     if [str.eq g_kind, 'int'] [ = 1 ]
     if [str.eq g_kind, 'float'] [ = 1 ]
     if [str.eq g_kind, 'str'] [ = 1 ]
+    if [str.eq g_kind, 'lb'] [ = 1 ]
     if [str.eq g_kind, 'id'] [ = 1 ]
     = 0
 ]
@@ -165,6 +167,27 @@ fn intify [str op, str typ] str [
     = op
 ]
 
+fn floatify [str op, str typ] str [
+    if [str.eq typ, 'float'] [ = op ]
+    if [is_integer_like typ] [
+        str r = new_reg 0
+        str s = str.concat r, ' = sitofp i32 '
+        s = str.concat s, op
+        s = str.concat s, ' to double'
+        emit_inst s
+        = r
+    ]
+    if [str.eq typ, 'bool'] [
+        str r2 = new_reg 0
+        str s2 = str.concat r2, ' = uitofp i1 '
+        s2 = str.concat s2, op
+        s2 = str.concat s2, ' to double'
+        emit_inst s2
+        = r2
+    ]
+    = op
+]
+
 fn can_cast [str from, str to] int [
     if [str.eq from, to] [ = 1 ]
     if [str.eq to, 'bool'] [
@@ -175,17 +198,39 @@ fn can_cast [str from, str to] int [
         if [str.eq from, 'int' or str.eq from, 'char' or str.eq from, 'bool'] [ = 1 ]
         = 0
     ]
+    if [str.eq to, 'float'] [
+        if [is_integer_like from] [ = 1 ]
+        = 0
+    ]
     if [str.eq to, 'str' and str.starts from, 'ptr '] [ = 1 ]
     if [str.starts to, 'ptr ' and str.eq from, 'str'] [ = 1 ]
     if [str.starts to, 'ptr ' and str.starts from, 'ptr '] [ = 1 ]
     = 0
 ]
 
+fn can_explicit_cast [str from, str to] int [
+    if [can_cast from, to] [ = 1 ]
+    if [str.eq from, 'float' and [str.eq to, 'int' or str.eq to, 'char']] [ = 1 ]
+    if [str.eq from, 'float' and str.eq to, 'bool'] [ = 1 ]
+    if [str.eq from, 'bool' and str.eq to, 'float'] [ = 1 ]
+    = 0
+]
+
 fn cast_value [str op, str from, str to] str [
     if [str.eq from, to] [ = op ]
     if [str.eq to, 'bool'] [ = boolify op, from ]
-    if [str.eq to, 'int'] [ = intify op, from ]
-    if [str.eq to, 'char'] [ = intify op, from ]
+    if [str.eq to, 'int' or str.eq to, 'char'] [
+        if [str.eq from, 'float'] [
+            str r = new_reg 0
+            str s = str.concat r, ' = fptosi double '
+            s = str.concat s, op
+            s = str.concat s, ' to i32'
+            emit_inst s
+            = r
+        ]
+        = intify op, from
+    ]
+    if [str.eq to, 'float'] [ = floatify op, from ]
     if [str.eq to, 'str' and str.starts from, 'ptr '] [ = op ]
     if [str.starts to, 'ptr ' and str.eq from, 'str'] [ = op ]
     if [str.starts to, 'ptr ' and str.starts from, 'ptr '] [ = op ]
@@ -200,6 +245,92 @@ fn checked_cast [str op, str from, str to] str [
     msg = str.concat msg, from
     fail_prev msg
     = op
+]
+
+fn explicit_cast [str op, str from, str to, int line, int start, int finish] str [
+    if [can_explicit_cast from, to] [ = cast_value op, from, to ]
+    str msg = 'invalid explicit cast: '
+    msg = str.concat msg, from
+    msg = str.concat msg, ' as '
+    msg = str.concat msg, to
+    fail_at msg, line, start, finish
+    = op
+]
+
+fn emit_numeric_compare [str op, str left, str lt, str right, str rt] str [
+    if [[is_integer_like lt and is_integer_like rt]] [
+        str pred = 'sgt'
+        if [str.eq op, 'lt'] [ pred = 'slt' ]
+        if [str.eq op, 'ge'] [ pred = 'sge' ]
+        if [str.eq op, 'le'] [ pred = 'sle' ]
+        str r = new_reg 0
+        str s = str.concat r, ' = icmp '
+        s = str.concat s, pred
+        s = str.concat s, ' i32 '
+        s = str.concat s, left
+        s = str.concat s, ', '
+        s = str.concat s, right
+        emit_inst s
+        = r
+    ]
+    str a = left
+    str b = right
+    if [str.eq lt, 'float' and is_integer_like rt] [ b = floatify right, rt ]
+    else [
+        if [is_integer_like lt and str.eq rt, 'float'] [ a = floatify left, lt ]
+    ]
+    str fpred = 'ogt'
+    if [str.eq op, 'lt'] [ fpred = 'olt' ]
+    if [str.eq op, 'ge'] [ fpred = 'oge' ]
+    if [str.eq op, 'le'] [ fpred = 'ole' ]
+    str fr = new_reg 0
+    str fs = str.concat fr, ' = fcmp '
+    fs = str.concat fs, fpred
+    fs = str.concat fs, ' double '
+    fs = str.concat fs, a
+    fs = str.concat fs, ', '
+    fs = str.concat fs, b
+    emit_inst fs
+    = fr
+]
+
+fn emit_numeric_arithmetic [str op, str left, str lt, str right, str rt] str [
+    if [is_integer_like lt and is_integer_like rt] [
+        str inst = 'add'
+        if [str.eq op, 'sub'] [ inst = 'sub' ]
+        if [str.eq op, 'mul'] [ inst = 'mul' ]
+        if [str.eq op, 'div'] [ inst = 'sdiv' ]
+        if [str.eq op, 'mod'] [ inst = 'srem' ]
+        str r = new_reg 0
+        str s = str.concat r, ' = '
+        s = str.concat s, inst
+        s = str.concat s, ' i32 '
+        s = str.concat s, left
+        s = str.concat s, ', '
+        s = str.concat s, right
+        emit_inst s
+        g_expr_type = 'int'
+        = r
+    ]
+    str a = left
+    str b = right
+    if [is_integer_like lt] [ a = floatify left, lt ]
+    if [is_integer_like rt] [ b = floatify right, rt ]
+    str finst = 'fadd'
+    if [str.eq op, 'sub'] [ finst = 'fsub' ]
+    if [str.eq op, 'mul'] [ finst = 'fmul' ]
+    if [str.eq op, 'div'] [ finst = 'fdiv' ]
+    if [str.eq op, 'mod'] [ finst = 'frem' ]
+    str fr = new_reg 0
+    str fs = str.concat fr, ' = '
+    fs = str.concat fs, finst
+    fs = str.concat fs, ' double '
+    fs = str.concat fs, a
+    fs = str.concat fs, ', '
+    fs = str.concat fs, b
+    emit_inst fs
+    g_expr_type = 'float'
+    = fr
 ]
 
 fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op_start, int op_end] str [
@@ -295,16 +426,20 @@ fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op
             = ir
         ]
 
-        if [str.eq lt, 'float' and str.eq rt, 'float'] [
+        if [[str.eq lt, 'float' or is_integer_like lt] and [str.eq rt, 'float' or is_integer_like rt]] [
+            str fa = left
+            str fb = right
+            if [is_integer_like lt] [ fa = floatify left, lt ]
+            if [is_integer_like rt] [ fb = floatify right, rt ]
             str fpred = 'oeq'
             if [str.eq op, 'ne'] [ fpred = 'une' ]
             str fr = new_reg 0
             str fs = str.concat fr, ' = fcmp '
             fs = str.concat fs, fpred
             fs = str.concat fs, ' double '
-            fs = str.concat fs, left
+            fs = str.concat fs, fa
             fs = str.concat fs, ', '
-            fs = str.concat fs, right
+            fs = str.concat fs, fb
             emit_inst fs
             g_expr_type = 'bool'
             g_expr_addr = ''
@@ -318,39 +453,11 @@ fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op
     ]
 
     if [str.eq op, 'gt' or str.eq op, 'lt' or str.eq op, 'ge' or str.eq op, 'le'] [
-        if [is_integer_like lt and is_integer_like rt] [
-            str pred2 = 'sgt'
-            if [str.eq op, 'lt'] [ pred2 = 'slt' ]
-            if [str.eq op, 'ge'] [ pred2 = 'sge' ]
-            if [str.eq op, 'le'] [ pred2 = 'sle' ]
-            str r2 = new_reg 0
-            str s2 = str.concat r2, ' = icmp '
-            s2 = str.concat s2, pred2
-            s2 = str.concat s2, ' i32 '
-            s2 = str.concat s2, left
-            s2 = str.concat s2, ', '
-            s2 = str.concat s2, right
-            emit_inst s2
+        if [[is_integer_like lt or str.eq lt, 'float'] and [is_integer_like rt or str.eq rt, 'float']] [
+            str cmp = emit_numeric_compare op, left, lt, right, rt
             g_expr_type = 'bool'
             g_expr_addr = ''
-            = r2
-        ]
-        if [str.eq lt, 'float' and str.eq rt, 'float'] [
-            str fpred2 = 'ogt'
-            if [str.eq op, 'lt'] [ fpred2 = 'olt' ]
-            if [str.eq op, 'ge'] [ fpred2 = 'oge' ]
-            if [str.eq op, 'le'] [ fpred2 = 'ole' ]
-            str fr2 = new_reg 0
-            str fs2 = str.concat fr2, ' = fcmp '
-            fs2 = str.concat fs2, fpred2
-            fs2 = str.concat fs2, ' double '
-            fs2 = str.concat fs2, left
-            fs2 = str.concat fs2, ', '
-            fs2 = str.concat fs2, right
-            emit_inst fs2
-            g_expr_type = 'bool'
-            g_expr_addr = ''
-            = fr2
+            = cmp
         ]
         operator_type_error op, lt, rt, op_line, op_start, op_end
         g_expr_type = 'bool'
@@ -359,41 +466,10 @@ fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op
     ]
 
     if [str.eq op, 'add' or str.eq op, 'sub' or str.eq op, 'mul' or str.eq op, 'div' or str.eq op, 'mod'] [
-        if [is_integer_like lt and is_integer_like rt] [
-            str inst2 = 'add'
-            if [str.eq op, 'sub'] [ inst2 = 'sub' ]
-            if [str.eq op, 'mul'] [ inst2 = 'mul' ]
-            if [str.eq op, 'div'] [ inst2 = 'sdiv' ]
-            if [str.eq op, 'mod'] [ inst2 = 'srem' ]
-            str r3 = new_reg 0
-            str s3 = str.concat r3, ' = '
-            s3 = str.concat s3, inst2
-            s3 = str.concat s3, ' i32 '
-            s3 = str.concat s3, left
-            s3 = str.concat s3, ', '
-            s3 = str.concat s3, right
-            emit_inst s3
-            g_expr_type = 'int'
+        if [[is_integer_like lt or str.eq lt, 'float'] and [is_integer_like rt or str.eq rt, 'float']] [
+            str out = emit_numeric_arithmetic op, left, lt, right, rt
             g_expr_addr = ''
-            = r3
-        ]
-        if [str.eq lt, 'float' and str.eq rt, 'float'] [
-            str finst = 'fadd'
-            if [str.eq op, 'sub'] [ finst = 'fsub' ]
-            if [str.eq op, 'mul'] [ finst = 'fmul' ]
-            if [str.eq op, 'div'] [ finst = 'fdiv' ]
-            if [str.eq op, 'mod'] [ finst = 'frem' ]
-            str fr3 = new_reg 0
-            str fs3 = str.concat fr3, ' = '
-            fs3 = str.concat fs3, finst
-            fs3 = str.concat fs3, ' double '
-            fs3 = str.concat fs3, left
-            fs3 = str.concat fs3, ', '
-            fs3 = str.concat fs3, right
-            emit_inst fs3
-            g_expr_type = 'float'
-            g_expr_addr = ''
-            = fr3
+            = out
         ]
         operator_type_error op, lt, rt, op_line, op_start, op_end
         g_expr_type = 'int'
