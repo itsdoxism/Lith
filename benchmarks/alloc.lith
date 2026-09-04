@@ -1,0 +1,21 @@
+fn main [] int [
+    str data = io.read_text 'benchmarks/input.txt'
+    int n = str.len data
+    int count = n mul 1000
+    ptr int values = sys.alloc count
+    int i = 0
+    while [i lt count] [
+        values[i] = i mod 97
+        i = i add 1
+    ]
+    int sum = 0
+    i = 0
+    while [i lt count] [
+        int tmp = sum add values[i]
+        sum = tmp mod 1000000007
+        i = i add 1
+    ]
+    io.print 'sum: [sum]'
+    sys.free values
+    = 0
+]
