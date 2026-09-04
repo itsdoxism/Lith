@@ -3,6 +3,9 @@ str g_struct_counts = ''
 str g_struct_indices = ''
 str g_struct_types = ''
 str g_struct_field_names = ''
+str g_struct_defined = ''
+str g_struct_names = ''
+int g_struct_name_count = 0
 
 fn struct_key [str name, str field] str [
     str r = str.concat name, '@'
