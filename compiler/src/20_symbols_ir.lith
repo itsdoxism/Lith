@@ -141,14 +141,14 @@ fn local_addr [str name] str [
 ]
 
 fn emit_line [str s] int [
-    g_out = str.concat g_out, s
-    g_out = str.concat g_out, str.chr 10
+    g_out = __append_owned g_out, s
+    g_out = __append_owned g_out, g_newline
     = 0
 ]
 
 fn emit_string_line [str s] int [
-    g_strings = str.concat g_strings, s
-    g_strings = str.concat g_strings, str.chr 10
+    g_strings = __append_owned g_strings, s
+    g_strings = __append_owned g_strings, g_newline
     = 0
 ]
 
