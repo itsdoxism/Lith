@@ -1,0 +1,4 @@
+fn main [] int [
+    arr int 3 values = [1, 2]
+    = 0
+]
