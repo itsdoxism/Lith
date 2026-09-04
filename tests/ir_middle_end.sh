@@ -46,14 +46,25 @@ if grep -q ' load i32' "$LOAD_BODY"; then
     exit 1
 fi
 grep -q 'ret i32 9' "$LOAD_BODY"
+
+# CFG v1 is label-name agnostic: after the constant cbranch becomes an
+# unconditional branch, the ordinary if.else block is unreachable and must be
+# removed even though it is not a compiler-generated dead.* block.
+MAIN_BODY="$BUILD/main.ll"
+sed -n '/^define i32 @main/,/^}/p' "$IR" > "$MAIN_BODY"
+if grep -q 'call i32 @local_load' "$MAIN_BODY"; then
+    echo 'IR CFG reachability failed to prune unreachable if.else block' >&2
+    exit 1
+fi
+
 # Source after an unconditional return is emitted behind a compiler-generated
-# dead block; CFG pruning should remove the unreachable print call.
+# dead block; CFG pruning should remove the unreachable print call as well.
 if grep -q 'call i32 @puts' "$IR"; then
     echo 'IR CFG pruning failed to remove unreachable print' >&2
     exit 1
 fi
 if grep -q '^dead\.' "$IR"; then
-    echo 'IR CFG pruning left an unreferenced dead block' >&2
+    echo 'IR CFG pruning left an unreachable dead block' >&2
     exit 1
 fi
 
@@ -74,8 +85,12 @@ grep -q 'ir_validate_function raw' compiler/src/25_ir.lith
 grep -q 'fn ir_run_optimization_pipeline' compiler/src/25_ir.lith
 grep -q 'ir_validate_function current' compiler/src/25_ir.lith
 grep -q 'ir_validate_function next' compiler/src/25_ir.lith
+grep -q 'ir_cfg_prune_unreachable next' compiler/src/25_ir.lith
+grep -q 'ir_validate_function cfg' compiler/src/25_ir.lith
 grep -q 'ir_run_optimization_pipeline raw' compiler/src/25_ir.lith
 grep -q 'ir_index_record_count' compiler/src/27_ir_index.lith
 grep -q 'ir_index_fill' compiler/src/27_ir_index.lith
+grep -q 'fn ir_cfg_collect_reachable' compiler/src/28_ir_cfg.lith
+grep -q 'fn ir_cfg_prune_unreachable' compiler/src/28_ir_cfg.lith
 
-echo 'Lith IR validator + verified optimizer pipeline: passed'
+echo 'Lith IR validator + verified optimizer/CFG pipeline: passed'
