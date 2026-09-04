@@ -1,9 +1,20 @@
+fn dead_math [int input] int [
+    input add 10
+    = input
+]
+
+fn local_load [] int [
+    int value = 9
+    = value
+]
+
 fn main [] int [
     int folded = 2 add 3
     if [1 eq 1] [
         = folded
     ]
     else [
-        = 0
+        = local_load []
     ]
+    io.print 'unreachable'
 ]

@@ -406,7 +406,9 @@ fn ir_begin_function [str name, str ret, str params, int count] int [
 
 fn ir_end_function [int unused] int [
     if [ir_validate_function g_ir_code eq 0] [ = 0 ]
-    str optimized = ir_optimize_function g_ir_code
+    str optimized_v1 = ir_optimize_function g_ir_code
+    str optimized = ir_optimize_function_v2 optimized_v1
+    sys.free optimized_v1
     if [ir_validate_function optimized eq 0] [
         sys.free optimized
         = 0
