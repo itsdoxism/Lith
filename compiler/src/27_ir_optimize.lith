@@ -308,96 +308,32 @@ fn ir_temp_id [str value] int [
     = id
 ]
 
-fn ir_note_temp_use_array [ptr int uses, str value] int [
+fn ir_mark_temp_live [ptr int live, str value] int [
     int id = ir_temp_id value
-    if [id gt 0] [ uses[id] = uses[id] add 1 ]
+    if [id gt 0] [ live[id] = 1 ]
     = 0
 ]
 
-fn ir_note_call_uses_array [ptr int uses, str args, int count] int [
+fn ir_mark_call_live [ptr int live, str args, int count] int [
     int i = 0
     while [i lt count] [
         str value = ir_arg_value args, i
-        ir_note_temp_use_array uses, value
+        ir_mark_temp_live live, value
         sys.free value
         i = i add 1
     ]
     = 0
 ]
 
-fn ir_note_phi_uses_array [ptr int uses, str payload, int count] int [
+fn ir_mark_phi_live [ptr int live, str payload, int count] int [
     int i = 0
     while [i lt count] [
         str pair = ir_list_item payload, i
         str value = ir_pair_left pair
-        ir_note_temp_use_array uses, value
+        ir_mark_temp_live live, value
         sys.free pair
         sys.free value
         i = i add 1
-    ]
-    = 0
-]
-
-fn ir_collect_temp_uses_array [str code, ptr int uses] int [
-    int n = str.len code
-    int i = 0
-    while [i lt n] [
-        int start = i
-        while [i lt n and str.at code, i ne 10] [ i = i add 1 ]
-        str line = str.slice code, start, i
-        str op = ir_record_field line, 0
-        str a = ir_record_field line, 1
-        str b = ir_record_field line, 2
-        str c = ir_record_field line, 3
-        str d = ir_record_field line, 4
-        str e = ir_record_field line, 5
-
-        if [str.eq op, 'load'] [ ir_note_temp_use_array uses, c ]
-        if [str.eq op, 'store'] [
-            ir_note_temp_use_array uses, b
-            ir_note_temp_use_array uses, c
-        ]
-        if [str.eq op, 'array_addr' or str.eq op, 'pointer_addr'] [
-            ir_note_temp_use_array uses, c
-            ir_note_temp_use_array uses, d
-        ]
-        if [str.eq op, 'field_addr'] [ ir_note_temp_use_array uses, c ]
-        if [str.eq op, 'truthy_pointer' or str.eq op, 'truthy_float' or str.eq op, 'truthy_int'] [ ir_note_temp_use_array uses, b ]
-        if [str.eq op, 'not_bool' or str.eq op, 'bool_to_int'] [ ir_note_temp_use_array uses, b ]
-        if [str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [ ir_note_temp_use_array uses, b ]
-        if [str.eq op, 'logic' or str.eq op, 'compare_int' or str.eq op, 'compare_bool'] [
-            ir_note_temp_use_array uses, c
-            ir_note_temp_use_array uses, d
-        ]
-        if [str.eq op, 'compare_pointer' or str.eq op, 'compare_float' or str.eq op, 'arith_int' or str.eq op, 'arith_float'] [
-            ir_note_temp_use_array uses, c
-            ir_note_temp_use_array uses, d
-        ]
-        if [str.eq op, 'cbranch'] [ ir_note_temp_use_array uses, a ]
-        if [str.eq op, 'return'] [ ir_note_temp_use_array uses, b ]
-        if [str.eq op, 'alloc'] [ ir_note_temp_use_array uses, c ]
-        if [str.eq op, 'realloc'] [
-            ir_note_temp_use_array uses, c
-            ir_note_temp_use_array uses, d
-        ]
-        if [str.eq op, 'free' or str.eq op, 'print_line'] [ ir_note_temp_use_array uses, a ]
-        if [str.eq op, 'call'] [
-            int argc = ir_parse_count_text d
-            ir_note_call_uses_array uses, e, argc
-        ]
-        if [str.eq op, 'phi'] [
-            int pc = ir_parse_count_text c
-            ir_note_phi_uses_array uses, e, pc
-        ]
-
-        sys.free op
-        sys.free a
-        sys.free b
-        sys.free c
-        sys.free d
-        sys.free e
-        sys.free line
-        if [i lt n] [ i = i add 1 ]
     ]
     = 0
 ]
@@ -415,47 +351,6 @@ fn ir_is_pure_result_op [str op] int [
     = 0
 ]
 
-fn ir_dce_once [str code] str [
-    int use_count_size = g_temp add 1
-    ptr int uses = sys.alloc use_count_size
-    int clear = 0
-    while [clear lt use_count_size] [
-        uses[clear] = 0
-        clear = clear add 1
-    ]
-    ir_collect_temp_uses_array code, uses
-
-    str out = str.slice '', 0, 0
-    int n = str.len code
-    int i = 0
-    while [i lt n] [
-        int start = i
-        while [i lt n and str.at code, i ne 10] [ i = i add 1 ]
-        str line = str.slice code, start, i
-        str op = ir_record_field line, 0
-        str result = ir_record_field line, 1
-        int keep = 1
-        if [ir_is_pure_result_op op and ir_value_is_temp result] [
-            int id = ir_temp_id result
-            if [id gt 0 and uses[id] eq 0] [ keep = 0 ]
-        ]
-        if [keep] [
-            out = ir_append_owned out, line
-            out = ir_append_owned out, g_newline
-        ]
-        sys.free op
-        sys.free result
-        sys.free line
-        if [i lt n] [ i = i add 1 ]
-    ]
-    sys.free uses
-    = out
-]
-
-fn ir_eliminate_dead_values [str code] str [
-    = ir_dce_once code
-]
-
 fn ir_note_label_ref [str refs, str label] str [
     str count_text = map_get refs, label
     int count = 0
@@ -464,76 +359,144 @@ fn ir_note_label_ref [str refs, str label] str [
     = map_put refs, label, int.str count
 ]
 
-fn ir_collect_label_refs [str code] str [
-    str refs = ''
-    int n = str.len code
-    int i = 0
-    while [i lt n] [
-        int start = i
-        while [i lt n and str.at code, i ne 10] [ i = i add 1 ]
-        str line = str.slice code, start, i
-        str op = ir_record_field line, 0
-        str a = ir_record_field line, 1
-        str b = ir_record_field line, 2
-        str c = ir_record_field line, 3
-        str e = ir_record_field line, 5
-        if [str.eq op, 'branch'] [ refs = ir_note_label_ref refs, a ]
-        if [str.eq op, 'cbranch'] [
-            refs = ir_note_label_ref refs, b
-            refs = ir_note_label_ref refs, c
-        ]
-        if [str.eq op, 'phi'] [
-            int pc = ir_parse_count_text c
-            int pi = 0
-            while [pi lt pc] [
-                str pair = ir_list_item e, pi
-                str pred = ir_pair_right pair
-                refs = ir_note_label_ref refs, pred
-                sys.free pair
-                sys.free pred
-                pi = pi add 1
-            ]
-        ]
-        sys.free line
-        if [i lt n] [ i = i add 1 ]
+fn ir_mark_record_inputs [ptr int live, str op, str a, str b, str c, str d, str e] int [
+    if [str.eq op, 'load'] [ ir_mark_temp_live live, c ]
+    if [str.eq op, 'store'] [
+        ir_mark_temp_live live, b
+        ir_mark_temp_live live, c
     ]
-    = refs
+    if [str.eq op, 'array_addr' or str.eq op, 'pointer_addr'] [
+        ir_mark_temp_live live, c
+        ir_mark_temp_live live, d
+    ]
+    if [str.eq op, 'field_addr'] [ ir_mark_temp_live live, c ]
+    if [str.eq op, 'truthy_pointer' or str.eq op, 'truthy_float' or str.eq op, 'truthy_int'] [ ir_mark_temp_live live, b ]
+    if [str.eq op, 'not_bool' or str.eq op, 'bool_to_int'] [ ir_mark_temp_live live, b ]
+    if [str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [ ir_mark_temp_live live, b ]
+    if [str.eq op, 'logic' or str.eq op, 'compare_int' or str.eq op, 'compare_bool'] [
+        ir_mark_temp_live live, c
+        ir_mark_temp_live live, d
+    ]
+    if [str.eq op, 'compare_pointer' or str.eq op, 'compare_float' or str.eq op, 'arith_int' or str.eq op, 'arith_float'] [
+        ir_mark_temp_live live, c
+        ir_mark_temp_live live, d
+    ]
+    if [str.eq op, 'cbranch'] [ ir_mark_temp_live live, a ]
+    if [str.eq op, 'return'] [ ir_mark_temp_live live, b ]
+    if [str.eq op, 'alloc'] [ ir_mark_temp_live live, c ]
+    if [str.eq op, 'realloc'] [
+        ir_mark_temp_live live, c
+        ir_mark_temp_live live, d
+    ]
+    if [str.eq op, 'free' or str.eq op, 'print_line'] [ ir_mark_temp_live live, a ]
+    if [str.eq op, 'call'] [
+        int argc = ir_parse_count_text d
+        ir_mark_call_live live, e, argc
+    ]
+    if [str.eq op, 'phi'] [
+        int pc = ir_parse_count_text c
+        ir_mark_phi_live live, e, pc
+    ]
+    = 0
 ]
 
-fn ir_prune_unreferenced_dead_blocks [str code] str [
-    str refs = ir_collect_label_refs code
-    str out = str.slice '', 0, 0
-    int n = str.len code
-    int i = 0
-    int skipping = 0
-    while [i lt n] [
-        int start = i
-        while [i lt n and str.at code, i ne 10] [ i = i add 1 ]
-        str line = str.slice code, start, i
-        str op = ir_record_field line, 0
-        str a = ir_record_field line, 1
-        if [str.eq op, 'label'] [
-            skipping = 0
-            if [str.starts a, 'dead.'] [
-                str ref_count = map_get refs, a
-                if [str.eq ref_count, ''] [ skipping = 1 ]
-            ]
+fn ir_note_record_labels [str refs, str op, str a, str b, str c, str e] str [
+    str out = refs
+    if [str.eq op, 'branch'] [ out = ir_note_label_ref out, a ]
+    if [str.eq op, 'cbranch'] [
+        out = ir_note_label_ref out, b
+        out = ir_note_label_ref out, c
+    ]
+    if [str.eq op, 'phi'] [
+        int pc = ir_parse_count_text c
+        int i = 0
+        while [i lt pc] [
+            str pair = ir_list_item e, i
+            str pred = ir_pair_right pair
+            out = ir_note_label_ref out, pred
+            sys.free pair
+            sys.free pred
+            i = i add 1
         ]
-        if [skipping eq 0] [
-            out = ir_append_owned out, line
-            out = ir_append_owned out, g_newline
-        ]
-        sys.free line
-        if [i lt n] [ i = i add 1 ]
     ]
     = out
 ]
 
+# Optimizer v2 indexed arena pass. Backward liveness performs transitive DCE in
+# one analysis pass; a single forward pass then emits kept records and prunes
+# unreferenced compiler-generated dead.* blocks.
 fn ir_optimize_function_v2 [str code] str [
-    str dce = ir_eliminate_dead_values code
-    str cfg = ir_prune_unreferenced_dead_blocks dce
-    sys.free dce
-    str final = ir_eliminate_dead_values cfg
-    sys.free cfg
-    = final
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+    int live_size = g_temp add 1
+    ptr int live = sys.alloc live_size
+    ptr int keep = sys.alloc record_count
+
+    int z = 0
+    while [z lt live_size] [ live[z] = 0 z = z add 1 ]
+    z = 0
+    while [z lt record_count] [ keep[z] = 0 z = z add 1 ]
+
+    str refs = ''
+    int i = record_count sub 1
+    while [i ge 0] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+        int keep_record = 1
+
+        if [ir_is_pure_result_op op and ir_value_is_temp a] [
+            int id = ir_temp_id a
+            if [id gt 0 and live[id] eq 0] [ keep_record = 0 ]
+        ]
+        if [keep_record] [
+            keep[i] = 1
+            ir_mark_record_inputs live, op, a, b, c, d, e
+            refs = ir_note_record_labels refs, op, a, b, c, e
+        ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i sub 1
+    ]
+
+    str out = str.slice '', 0, 0
+    int skipping = 0
+    i = 0
+    while [i lt record_count] [
+        if [keep[i]] [
+            str op2 = ir_index_field code, starts, i, 0
+            str a2 = ir_index_field code, starts, i, 1
+            if [str.eq op2, 'label'] [
+                skipping = 0
+                if [str.starts a2, 'dead.'] [
+                    str ref_count = map_get refs, a2
+                    if [str.eq ref_count, ''] [ skipping = 1 ]
+                ]
+            ]
+            if [skipping eq 0] [
+                str line2 = ir_index_line code, starts, i
+                out = ir_append_owned out, line2
+                out = ir_append_owned out, g_newline
+                sys.free line2
+            ]
+            sys.free op2
+            sys.free a2
+        ]
+        i = i add 1
+    ]
+
+    sys.free starts
+    sys.free live
+    sys.free keep
+    = out
 ]
