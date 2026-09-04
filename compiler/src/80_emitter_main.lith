@@ -168,7 +168,11 @@ fn compile_llvm [str source] str [
 
 fn main [int argc, ptr str argv] int [
     if [argc lt 3] [ = 2 ]
-    str source = io.read_text argv[1]
+    str source = load_program argv[1]
+    if [g_module_error] [
+        io.print 'error: [g_module_error_message]'
+        = 1
+    ]
     str ir = compile_llvm source
     if [g_error] [
         io.print '[g_error_message]'
