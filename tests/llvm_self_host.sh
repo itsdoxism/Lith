@@ -6,15 +6,11 @@ CLANG=${CLANG:-clang}
 BUILD=${BUILD:-build/llvm-selfhost}
 LLVM_LUNAC=${LLVM_LUNAC:-compiler/lunac_llvm.py}
 LLVM_RUNTIME=${LLVM_RUNTIME:-runtime/luna_runtime.ll}
+BOOTSTRAP_GEN=${BOOTSTRAP_GEN:-compiler/bootstrap/build_reference_parity.py}
 
 mkdir -p "$BUILD"
 SRC="$BUILD/lunac_llvm.luna"
-cat \
-  compiler/bootstrap/lunac_llvm.part0.structs.luna \
-  compiler/bootstrap/lunac_llvm.part1.luna \
-  compiler/bootstrap/lunac_llvm.part2.structs.luna \
-  compiler/bootstrap/lunac_llvm.part3.structs.luna \
-  > "$SRC"
+"$PYTHON" "$BOOTSTRAP_GEN" "$SRC"
 
 # Stage 1 is bootstrapped by the trusted Python LLVM backend.
 "$PYTHON" "$LLVM_LUNAC" "$SRC" "$BUILD/stage1.ll"
@@ -29,7 +25,7 @@ cat \
 
 "$BUILD/stage3" "$SRC" "$BUILD/stage4.ll"
 
-# A stable compiler must still reach a textual IR fixed point after struct parity.
+# Reference-parity additions must preserve the self-host fixed point.
 cmp "$BUILD/stage2.ll" "$BUILD/stage3.ll"
 cmp "$BUILD/stage3.ll" "$BUILD/stage4.ll"
 
