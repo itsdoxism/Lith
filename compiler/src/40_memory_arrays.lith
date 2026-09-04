@@ -28,6 +28,11 @@ fn emit_sys_memory [str target_type] str [
     next_tok 0
 
     if [str.eq method, 'alloc'] [
+        str actual_target = target_type
+        if [not str.starts actual_target, 'ptr '] [
+            fail_prev 'sys.alloc requires a pointer destination type'
+            actual_target = 'ptr int'
+        ]
         str count = parse_expr 6
         str count_type = g_expr_type
         if [not str.eq count_type, 'int' and not str.eq count_type, 'char'] [
@@ -36,13 +41,13 @@ fn emit_sys_memory [str target_type] str [
             count = '0'
         ]
         else [ count = intify count, count_type ]
-        str bytes = emit_alloc_size target_type, count
+        str bytes = emit_alloc_size actual_target, count
         str out = new_reg 0
         str call = str.concat out, ' = call ptr @malloc(i64 '
         call = str.concat call, bytes
         call = str.concat call, ')'
         emit_inst call
-        g_expr_type = target_type
+        g_expr_type = actual_target
         g_expr_addr = ''
         = out
     ]
@@ -82,7 +87,7 @@ fn emit_sys_memory [str target_type] str [
     if [str.eq method, 'free'] [
         str old2 = parse_expr 6
         str old_type2 = g_expr_type
-        if [not str.starts old_type2, 'ptr '] [
+        if [not str.starts old_type2, 'ptr ' and not str.eq old_type2, 'str'] [
             str fmsg = str.concat 'sys.free expects pointer, got ', old_type2
             fail_prev fmsg
         ]
@@ -100,7 +105,7 @@ fn emit_sys_memory [str target_type] str [
     = '0'
 ]
 
-fn emit_array_store [str addr, str array_type, str elem_type, str index, str value] int [
+fn emit_array_element_addr [str addr, str array_type, str index] str [
     str gep = new_reg 0
     str gs = str.concat gep, ' = getelementptr inbounds '
     gs = str.concat gs, storage_type array_type
@@ -109,27 +114,88 @@ fn emit_array_store [str addr, str array_type, str elem_type, str index, str val
     gs = str.concat gs, ', i32 0, i32 '
     gs = str.concat gs, index
     emit_inst gs
-    str st = str.concat 'store ', storage_type elem_type
-    st = str.concat st, ' '
-    st = str.concat st, value
-    st = str.concat st, ', ptr '
-    st = str.concat st, gep
-    emit_inst st
+    = gep
+]
+
+fn emit_array_store [str addr, str array_type, str elem_type, str index, str value] int [
+    str gep = emit_array_element_addr addr, array_type, index
+    store_typed_value gep, elem_type, value
     = 0
 ]
 
-fn parse_array_decl_ir [str name] int [
+fn parse_array_literal_into [str addr, str array_type] int [
+    str elem_type = array_elem_type array_type
+    str expected_count = array_count_text array_type
+    expect_kind 'lb'
+    int index = 0
+    int too_many = 0
+    while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
+        str index_text = int.str index
+        int in_range = not str.eq index_text, expected_count
+        str elem_addr = ''
+        if [in_range] [ elem_addr = emit_array_element_addr addr, array_type, index_text ]
+
+        if [str.starts elem_type, 'arr ' and str.eq g_kind, 'lb'] [
+            if [in_range] [ parse_array_literal_into elem_addr, elem_type ]
+            else [
+                if [too_many eq 0] [ fail 'too many values in array literal' ]
+                too_many = 1
+                str dummy = new_reg 0
+                str da = str.concat dummy, ' = alloca '
+                da = str.concat da, storage_type elem_type
+                emit_inst da
+                parse_array_literal_into dummy, elem_type
+            ]
+        ]
+        else [
+            str value = parse_expr 0
+            str value_type = g_expr_type
+            str value_addr = g_expr_addr
+            if [in_range] [
+                value = checked_cast value, value_type, elem_type
+                value = materialize_array_value value, elem_type, value_addr
+                store_typed_value elem_addr, elem_type, value
+            ]
+            else [
+                if [too_many eq 0] [ fail_prev 'too many values in array literal' ]
+                too_many = 1
+            ]
+        ]
+
+        index = index add 1
+        if [str.eq g_kind, 'comma'] [ next_tok 0 ]
+        else [ break ]
+    ]
+    expect_kind 'rb'
+    if [not str.eq int.str index, expected_count] [
+        fail_prev 'array literal length does not match its fixed array type'
+    ]
+    = 0
+]
+
+fn parse_inferred_array_decl_ir [str name] int [
     expect_kind 'lb'
     str values = ''
+    str value_addrs = ''
     str elem_type = ''
     int count = 0
     while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
+        if [str.eq g_kind, 'lb'] [
+            fail 'nested inferred arrays require an explicit array type'
+            = 0
+        ]
         str value = parse_expr 0
         str value_type = g_expr_type
+        str value_addr = g_expr_addr
         if [count eq 0] [ elem_type = value_type ]
-        else [ value = checked_cast value, value_type, elem_type ]
+        else [
+            value = checked_cast value, value_type, elem_type
+            value_type = elem_type
+        ]
+        value = materialize_array_value value, elem_type, value_addr
         str key = int.str count
         values = map_put values, key, value
+        value_addrs = map_put value_addrs, key, value_addr
         count = count add 1
         if [str.eq g_kind, 'comma'] [ next_tok 0 ]
         else [ break ]
@@ -137,9 +203,9 @@ fn parse_array_decl_ir [str name] int [
     expect_kind 'rb'
     if [count eq 0] [ elem_type = 'int' ]
 
-    str array_type = str.concat 'arr ', elem_type
+    str array_type = str.concat 'arr ', int.str count
     array_type = str.concat array_type, ' '
-    array_type = str.concat array_type, int.str count
+    array_type = str.concat array_type, elem_type
     g_locals = map_put g_locals, name, array_type
     str addr = new_reg 0
     g_local_addrs = map_put g_local_addrs, name, addr
@@ -157,6 +223,28 @@ fn parse_array_decl_ir [str name] int [
     = 0
 ]
 
+fn parse_explicit_array_decl_ir [str name, str typ] int [
+    g_locals = map_put g_locals, name, typ
+    str addr = new_reg 0
+    g_local_addrs = map_put g_local_addrs, name, addr
+    str alloc = str.concat addr, ' = alloca '
+    alloc = str.concat alloc, storage_type typ
+    emit_inst alloc
+
+    if [str.eq g_kind, 'lb'] [
+        parse_array_literal_into addr, typ
+        = 0
+    ]
+
+    str value = parse_expr 0
+    str value_type = g_expr_type
+    str value_addr = g_expr_addr
+    value = checked_cast value, value_type, typ
+    value = materialize_array_value value, typ, value_addr
+    store_typed_value addr, typ, value
+    = 0
+]
+
 fn parse_decl_ir [int unused] int [
     str typ = parse_type 0
     str name = g_text
@@ -168,7 +256,10 @@ fn parse_decl_ir [int unused] int [
     next_tok 0
     expect_kind 'assign'
     if [str.eq typ, 'arr'] [
-        = parse_array_decl_ir name
+        = parse_inferred_array_decl_ir name
+    ]
+    if [str.starts typ, 'arr '] [
+        = parse_explicit_array_decl_ir name, typ
     ]
     g_locals = map_put g_locals, name, typ
     str addr = new_reg 0
