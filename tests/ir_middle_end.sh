@@ -91,6 +91,12 @@ grep -q 'ir_run_optimization_pipeline raw' compiler/src/25_ir.lith
 grep -q 'ir_index_record_count' compiler/src/27_ir_index.lith
 grep -q 'ir_index_fill' compiler/src/27_ir_index.lith
 grep -q 'fn ir_cfg_collect_reachable' compiler/src/28_ir_cfg.lith
+grep -q 'fn ir_cfg_collect_edges' compiler/src/28_ir_cfg.lith
+grep -q 'fn ir_cfg_has_edge' compiler/src/28_ir_cfg.lith
+grep -q 'ir_cfg_has_edge edges, pred, block_label' compiler/src/28_ir_cfg.lith
 grep -q 'fn ir_cfg_prune_unreachable' compiler/src/28_ir_cfg.lith
+grep -q 'fn ir_dom_compute' compiler/src/29_ir_dom.lith
+grep -q 'fn ir_ud_collect_defs' compiler/src/29_ir_use_def.lith
+grep -q 'fn ir_ud_collect_uses' compiler/src/29_ir_use_def.lith
 
 echo 'Lith IR validator + verified optimizer/CFG pipeline: passed'
