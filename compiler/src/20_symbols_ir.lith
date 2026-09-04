@@ -140,15 +140,21 @@ fn local_addr [str name] str [
     = str.concat '@', name
 ]
 
+fn append_buffer [str buffer, str text] str [
+    str next = str.concat buffer, text
+    sys.free buffer
+    = next
+]
+
 fn emit_line [str s] int [
-    g_out = str.concat g_out, s
-    g_out = str.concat g_out, str.chr 10
+    g_out = append_buffer g_out, s
+    g_out = append_buffer g_out, g_newline
     = 0
 ]
 
 fn emit_string_line [str s] int [
-    g_strings = str.concat g_strings, s
-    g_strings = str.concat g_strings, str.chr 10
+    g_strings = append_buffer g_strings, s
+    g_strings = append_buffer g_strings, g_newline
     = 0
 ]
 
@@ -279,4 +285,3 @@ fn string_const [str s] str [
     r = str.concat r, ', i64 0, i64 0)'
     = r
 ]
-
