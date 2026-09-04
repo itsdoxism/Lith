@@ -41,6 +41,14 @@ check_compile_error() {
 run_native "$ROOT/tests/core/core_values.lith" core-values
 run_native "$ROOT/tests/core/module_main.lith" module-main
 
+relative_exe="$OUT/module-relative-parent"
+rm -f "$relative_exe"
+(
+    cd "$ROOT/tests/core/relative/deep"
+    "$ROOT/bin/lith" entry.lith -o "$relative_exe"
+)
+"$relative_exe"
+
 check_compile_error \
     "$ROOT/tests/core/bad_array_length.lith" \
     bad-array-length \
