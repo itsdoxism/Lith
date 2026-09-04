@@ -6,7 +6,7 @@ CLANG=${CLANG:-clang}
 RUNTIME="$ROOT/runtime/luna_runtime.ll"
 
 usage() {
-  echo "usage: $0 input.lith [-o output] [--emit-llvm path]" >&2
+  echo "usage: $0 input.lith [-o output] [--emit-llvm path] [-O0|-O1|-O2|-O3|--release] [--native]" >&2
   exit 2
 }
 
@@ -15,6 +15,8 @@ INPUT=$1
 shift
 OUTPUT=''
 EMIT=''
+OPT='-O2'
+NATIVE=''
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -27,6 +29,18 @@ while [ "$#" -gt 0 ]; do
       [ "$#" -ge 2 ] || usage
       EMIT=$2
       shift 2
+      ;;
+    -O0|-O1|-O2|-O3)
+      OPT=$1
+      shift
+      ;;
+    --release)
+      OPT='-O3'
+      shift
+      ;;
+    --native)
+      NATIVE='-march=native'
+      shift
       ;;
     *) usage ;;
   esac
@@ -46,4 +60,8 @@ TMP=${TMPDIR:-/tmp}/lith-$$.ll
 trap 'rm -f "$TMP"' EXIT HUP INT TERM
 
 "$ROOT/bin/lithc" "$INPUT" "$TMP"
-"$CLANG" -Wno-override-module -O2 "$TMP" "$RUNTIME" -o "$OUTPUT"
+if [ -n "$NATIVE" ]; then
+  "$CLANG" -Wno-override-module "$OPT" "$NATIVE" "$TMP" "$RUNTIME" -o "$OUTPUT"
+else
+  "$CLANG" -Wno-override-module "$OPT" "$TMP" "$RUNTIME" -o "$OUTPUT"
+fi
