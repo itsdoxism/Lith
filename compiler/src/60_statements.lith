@@ -50,45 +50,45 @@ fn parse_stmt_ir [int unused] int [
         str ct = g_expr_type
         cond = boolify cond, ct
         expect_kind 'rb'
-        str yes = new_label 'if.then'
-        str no = new_label 'if.else'
-        str done = new_label 'if.end'
-        emit_cbranch cond, yes, no
-        emit_label yes
+        str yes = ir_new_label 'if.then'
+        str no = ir_new_label 'if.else'
+        str done = ir_new_label 'if.end'
+        ir_cbranch cond, yes, no
+        ir_label yes
         parse_block_ir 0
         int yes_term = g_terminated
-        if [yes_term eq 0] [ emit_branch done ]
+        if [yes_term eq 0] [ ir_branch done ]
         skip_nl 0
         if [str.eq g_kind, 'id' and str.eq g_text, 'else'] [
             next_tok 0
-            emit_label no
+            ir_label no
             parse_block_ir 0
             int no_term = g_terminated
-            if [no_term eq 0] [ emit_branch done ]
-            emit_label done
-            if [yes_term and no_term] [ emit_unreachable 0 ]
+            if [no_term eq 0] [ ir_branch done ]
+            ir_label done
+            if [yes_term and no_term] [ ir_unreachable 0 ]
         ]
         else [
-            emit_label no
-            emit_branch done
-            emit_label done
+            ir_label no
+            ir_branch done
+            ir_label done
         ]
         = 0
     ]
     if [str.eq g_kind, 'id' and str.eq g_text, 'while'] [
         next_tok 0
-        str cond_label = new_label 'while.cond'
-        str body_label = new_label 'while.body'
-        str end_label = new_label 'while.end'
-        emit_branch cond_label
-        emit_label cond_label
+        str cond_label = ir_new_label 'while.cond'
+        str body_label = ir_new_label 'while.body'
+        str end_label = ir_new_label 'while.end'
+        ir_branch cond_label
+        ir_label cond_label
         expect_kind 'lb'
         str condw = parse_expr 0
         str cwt = g_expr_type
         condw = boolify condw, cwt
         expect_kind 'rb'
-        emit_cbranch condw, body_label, end_label
-        emit_label body_label
+        ir_cbranch condw, body_label, end_label
+        ir_label body_label
         str old_break = g_break_label
         str old_continue = g_continue_label
         g_break_label = end_label
@@ -96,8 +96,8 @@ fn parse_stmt_ir [int unused] int [
         parse_block_ir 0
         g_break_label = old_break
         g_continue_label = old_continue
-        if [g_terminated eq 0] [ emit_branch cond_label ]
-        emit_label end_label
+        if [g_terminated eq 0] [ ir_branch cond_label ]
+        ir_label end_label
         = 0
     ]
     if [str.eq g_kind, 'id' and str.eq g_text, 'loop'] [
@@ -124,58 +124,27 @@ fn parse_stmt_ir [int unused] int [
         str count = array_count_text collection_type
         str collection_addr = local_addr collection
 
-        str index_addr = new_reg 0
-        str ia = str.concat index_addr, ' = alloca i32'
-        emit_inst ia
-        str init = str.concat 'store i32 0, ptr ', index_addr
-        emit_inst init
+        str index_addr = ir_stack_alloc 'int'
+        ir_store 'int', '0', index_addr
 
-        str cond_label = new_label 'loop.cond'
-        str body_label = new_label 'loop.body'
-        str step_label = new_label 'loop.step'
-        str end_label = new_label 'loop.end'
-        emit_branch cond_label
-        emit_label cond_label
-        str index_value = new_reg 0
-        str il = str.concat index_value, ' = load i32, ptr '
-        il = str.concat il, index_addr
-        emit_inst il
-        str cond = new_reg 0
-        str cs = str.concat cond, ' = icmp slt i32 '
-        cs = str.concat cs, index_value
-        cs = str.concat cs, ', '
-        cs = str.concat cs, count
-        emit_inst cs
-        emit_cbranch cond, body_label, end_label
+        str cond_label = ir_new_label 'loop.cond'
+        str body_label = ir_new_label 'loop.body'
+        str step_label = ir_new_label 'loop.step'
+        str end_label = ir_new_label 'loop.end'
+        ir_branch cond_label
+        ir_label cond_label
+        str index_value = ir_load 'int', index_addr
+        str cond = ir_compare_int 'lt', index_value, count
+        ir_cbranch cond, body_label, end_label
 
-        emit_label body_label
-        str elem_addr = new_reg 0
-        str eg = str.concat elem_addr, ' = getelementptr inbounds '
-        eg = str.concat eg, storage_type collection_type
-        eg = str.concat eg, ', ptr '
-        eg = str.concat eg, collection_addr
-        eg = str.concat eg, ', i32 0, i32 '
-        eg = str.concat eg, index_value
-        emit_inst eg
-        str elem_value = new_reg 0
-        str el = str.concat elem_value, ' = load '
-        el = str.concat el, storage_type elem_type
-        el = str.concat el, ', ptr '
-        el = str.concat el, elem_addr
-        emit_inst el
+        ir_label body_label
+        str elem_addr = ir_array_addr collection_type, collection_addr, index_value
+        str elem_value = ir_load elem_type, elem_addr
 
         str old_locals = g_locals
         str old_addrs = g_local_addrs
-        str item_addr = new_reg 0
-        str item_alloc = str.concat item_addr, ' = alloca '
-        item_alloc = str.concat item_alloc, storage_type elem_type
-        emit_inst item_alloc
-        str item_store = str.concat 'store ', storage_type elem_type
-        item_store = str.concat item_store, ' '
-        item_store = str.concat item_store, elem_value
-        item_store = str.concat item_store, ', ptr '
-        item_store = str.concat item_store, item_addr
-        emit_inst item_store
+        str item_addr = ir_stack_alloc elem_type
+        ir_store elem_type, elem_value, item_addr
         g_locals = map_put g_locals, item, elem_type
         g_local_addrs = map_put g_local_addrs, item, item_addr
 
@@ -188,24 +157,14 @@ fn parse_stmt_ir [int unused] int [
         g_continue_label = old_continue
         g_locals = old_locals
         g_local_addrs = old_addrs
-        if [g_terminated eq 0] [ emit_branch step_label ]
+        if [g_terminated eq 0] [ ir_branch step_label ]
 
-        emit_label step_label
-        str step_old = new_reg 0
-        str sl = str.concat step_old, ' = load i32, ptr '
-        sl = str.concat sl, index_addr
-        emit_inst sl
-        str step_new = new_reg 0
-        str sa = str.concat step_new, ' = add i32 '
-        sa = str.concat sa, step_old
-        sa = str.concat sa, ', 1'
-        emit_inst sa
-        str ss = str.concat 'store i32 ', step_new
-        ss = str.concat ss, ', ptr '
-        ss = str.concat ss, index_addr
-        emit_inst ss
-        emit_branch cond_label
-        emit_label end_label
+        ir_label step_label
+        str step_old = ir_load 'int', index_addr
+        str step_new = ir_arith_int 'add', step_old, '1'
+        ir_store 'int', step_new, index_addr
+        ir_branch cond_label
+        ir_label end_label
         = 0
     ]
     if [str.eq g_kind, 'id' and str.eq g_text, 'break'] [
@@ -215,7 +174,7 @@ fn parse_stmt_ir [int unused] int [
             = 0
         ]
         next_tok 0
-        emit_branch g_break_label
+        ir_branch g_break_label
         = 0
     ]
     if [str.eq g_kind, 'id' and str.eq g_text, 'continue'] [
@@ -225,7 +184,7 @@ fn parse_stmt_ir [int unused] int [
             = 0
         ]
         next_tok 0
-        emit_branch g_continue_label
+        ir_branch g_continue_label
         = 0
     ]
     if [str.eq g_kind, 'assign'] [
@@ -235,7 +194,7 @@ fn parse_stmt_ir [int unused] int [
         str ra = g_expr_addr
         rv = checked_cast rv, rt, g_current_ret
         rv = materialize_array_value rv, g_current_ret, ra
-        emit_return g_current_ret, rv
+        ir_return g_current_ret, rv
         = 0
     ]
     if [str.eq g_kind, 'id' and str.eq g_text, 'return'] [
@@ -245,7 +204,7 @@ fn parse_stmt_ir [int unused] int [
         str ra2 = g_expr_addr
         rv2 = checked_cast rv2, rt2, g_current_ret
         rv2 = materialize_array_value rv2, g_current_ret, ra2
-        emit_return g_current_ret, rv2
+        ir_return g_current_ret, rv2
         = 0
     ]
     if [str.eq g_kind, 'id'] [
@@ -285,12 +244,7 @@ fn parse_stmt_ir [int unused] int [
         rhs = checked_cast rhs, rhs_type, lhs_type
         rhs = materialize_array_value rhs, lhs_type, rhs_addr
         if [writable eq 0] [ = 0 ]
-        str st = str.concat 'store ', storage_type lhs_type
-        st = str.concat st, ' '
-        st = str.concat st, rhs
-        st = str.concat st, ', ptr '
-        st = str.concat st, lhs_addr
-        emit_inst st
+        ir_store lhs_type, rhs, lhs_addr
         = 0
     ]
     = 0

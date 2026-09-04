@@ -1,18 +1,9 @@
 fn store_typed_value [str addr, str typ, str value] int [
-    str st = str.concat 'store ', storage_type typ
-    st = str.concat st, ' '
-    st = str.concat st, value
-    st = str.concat st, ', ptr '
-    st = str.concat st, addr
-    emit_inst st
-    = 0
+    = ir_store typ, value, addr
 ]
 
 fn emit_struct_literal [str name] str [
-    str addr = new_reg 0
-    str alloc = str.concat addr, ' = alloca '
-    alloc = str.concat alloc, storage_type name
-    emit_inst alloc
+    str addr = ir_stack_alloc name
 
     expect_kind 'lb'
     int index = 0
@@ -29,14 +20,7 @@ fn emit_struct_literal [str name] str [
         else [
             str field_type = struct_field_type name, field
             str field_index = struct_field_index name, field
-            str field_addr = new_reg 0
-            str gep = str.concat field_addr, ' = getelementptr inbounds '
-            gep = str.concat gep, storage_type name
-            gep = str.concat gep, ', ptr '
-            gep = str.concat gep, addr
-            gep = str.concat gep, ', i32 0, i32 '
-            gep = str.concat gep, field_index
-            emit_inst gep
+            str field_addr = ir_field_addr name, addr, field_index
 
             if [str.starts field_type, 'arr ' and str.eq g_kind, 'lb'] [
                 parse_array_literal_into field_addr, field_type
@@ -62,26 +46,15 @@ fn emit_struct_literal [str name] str [
         while [not str.eq missing, ''] [
             str missing_type = struct_field_type name, missing
             str missing_index = struct_field_index name, missing
-            str missing_addr = new_reg 0
-            str mg = str.concat missing_addr, ' = getelementptr inbounds '
-            mg = str.concat mg, storage_type name
-            mg = str.concat mg, ', ptr '
-            mg = str.concat mg, addr
-            mg = str.concat mg, ', i32 0, i32 '
-            mg = str.concat mg, missing_index
-            emit_inst mg
-            store_typed_value missing_addr, missing_type, default_value missing_type
+            str missing_addr = ir_field_addr name, addr, missing_index
+            str missing_value = ir_default_value missing_type
+            store_typed_value missing_addr, missing_type, missing_value
             index = index add 1
             missing = struct_field_name name, index
         ]
     ]
 
-    str loaded = new_reg 0
-    str ls = str.concat loaded, ' = load '
-    ls = str.concat ls, storage_type name
-    ls = str.concat ls, ', ptr '
-    ls = str.concat ls, addr
-    emit_inst ls
+    str loaded = ir_load name, addr
     g_expr_type = name
     g_expr_addr = addr
     = loaded
@@ -94,7 +67,7 @@ fn emit_match_expr [int unused] str [
     expect_kind 'lb'
     skip_nl 0
 
-    str merge_label = new_label 'match.merge'
+    str merge_label = ir_new_label 'match.merge'
     str values = ''
     str predecessors = ''
     str result_type = ''
@@ -107,12 +80,12 @@ fn emit_match_expr [int unused] str [
         next_tok 0
         str pattern = parse_expr 0
         str pattern_type = g_expr_type
-        str case_label = new_label 'match.case'
-        str next_label = new_label 'match.next'
+        str case_label = ir_new_label 'match.case'
+        str next_label = ir_new_label 'match.next'
         str cond = emit_binary 'eq', target, target_type, pattern, pattern_type, op_line, op_start, op_end
-        emit_cbranch cond, case_label, next_label
+        ir_cbranch cond, case_label, next_label
 
-        emit_label case_label
+        ir_label case_label
         expect_kind 'lb'
         skip_nl 0
         str value = parse_expr 0
@@ -127,13 +100,13 @@ fn emit_match_expr [int unused] str [
         skip_nl 0
         expect_kind 'rb'
         str predecessor = g_current_label
-        emit_branch merge_label
+        ir_branch merge_label
         str key = int.str result_count
         values = map_put values, key, value
         predecessors = map_put predecessors, key, predecessor
         result_count = result_count add 1
 
-        emit_label next_label
+        ir_label next_label
         skip_nl 0
     ]
 
@@ -152,7 +125,7 @@ fn emit_match_expr [int unused] str [
     skip_nl 0
     expect_kind 'rb'
     str fallback_predecessor = g_current_label
-    emit_branch merge_label
+    ir_branch merge_label
     str fallback_key = int.str result_count
     values = map_put values, fallback_key, fallback
     predecessors = map_put predecessors, fallback_key, fallback_predecessor
@@ -160,36 +133,15 @@ fn emit_match_expr [int unused] str [
     skip_nl 0
     expect_kind 'rb'
 
-    emit_label merge_label
-    str out = new_reg 0
-    str phi = str.concat out, ' = phi '
-    phi = str.concat phi, abi_type result_type
-    phi = str.concat phi, ' '
-    int i = 0
-    while [i lt result_count] [
-        if [i gt 0] [ phi = str.concat phi, ', ' ]
-        str key2 = int.str i
-        str pv = map_get values, key2
-        str pl = map_get predecessors, key2
-        phi = str.concat phi, '[ '
-        phi = str.concat phi, pv
-        phi = str.concat phi, ', %'
-        phi = str.concat phi, pl
-        phi = str.concat phi, ' ]'
-        i = i add 1
-    ]
-    emit_inst phi
+    ir_label merge_label
+    str out = ir_phi result_type, values, predecessors, result_count
     g_expr_type = result_type
     g_expr_addr = ''
 
     if [is_aggregate_type result_type] [
-        str result_addr = new_reg 0
-        str alloc2 = str.concat result_addr, ' = alloca '
-        alloc2 = str.concat alloc2, storage_type result_type
-        emit_inst alloc2
+        str result_addr = ir_stack_alloc result_type
         store_typed_value result_addr, result_type, out
         g_expr_addr = result_addr
     ]
     = out
 ]
-

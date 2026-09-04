@@ -1,0 +1,169 @@
+fn backend_lower_call [str out, str ret_type, str name, str count_text, str args] int [
+    str text = backend_operand out
+    text = str.concat text, ' = call '
+    text = str.concat text, backend_abi_type ret_type
+    text = str.concat text, ' @'
+    text = str.concat text, backend_symbol_name name
+    text = str.concat text, '('
+    int count = 0
+    str current = int.str count
+    while [not str.eq current, count_text] [
+        if [count gt 0] [ text = str.concat text, ', ' ]
+        str typ = ir_arg_type args, count
+        str value = ir_arg_value args, count
+        text = str.concat text, backend_abi_type typ
+        text = str.concat text, ' '
+        text = str.concat text, backend_operand value
+        count = count add 1
+        current = int.str count
+    ]
+    text = str.concat text, ')'
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_lower_phi [str out, str typ, str count_text, str payload] int [
+    str text = backend_operand out
+    text = str.concat text, ' = phi '
+    text = str.concat text, backend_abi_type typ
+    text = str.concat text, ' '
+    int count = 0
+    str current = int.str count
+    while [not str.eq current, count_text] [
+        if [count gt 0] [ text = str.concat text, ', ' ]
+        str pair = ir_list_item payload, count
+        str value = ir_pair_left pair
+        str pred = ir_pair_right pair
+        text = str.concat text, '[ '
+        text = str.concat text, backend_operand value
+        text = str.concat text, ', %'
+        text = str.concat text, pred
+        text = str.concat text, ' ]'
+        count = count add 1
+        current = int.str count
+    ]
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_alloc_size [str target_type, str count] str [
+    str elem = pointee_type target_type
+    str sizeptr = backend_new_temp 0
+    str text = str.concat sizeptr, ' = getelementptr '
+    text = str.concat text, backend_storage_type elem
+    text = str.concat text, ', ptr null, i32 '
+    text = str.concat text, backend_operand count
+    backend_emit_line str.concat '  ', text
+    str bytes = backend_new_temp 0
+    str cast = str.concat bytes, ' = ptrtoint ptr '
+    cast = str.concat cast, sizeptr
+    cast = str.concat cast, ' to i64'
+    backend_emit_line str.concat '  ', cast
+    = bytes
+]
+
+fn backend_lower_alloc [str out, str target_type, str count] int [
+    str bytes = backend_alloc_size target_type, count
+    str text = backend_operand out
+    text = str.concat text, ' = call ptr @malloc(i64 '
+    text = str.concat text, bytes
+    text = str.concat text, ')'
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_lower_realloc [str out, str target_type, str old, str count] int [
+    str bytes = backend_alloc_size target_type, count
+    str text = backend_operand out
+    text = str.concat text, ' = call ptr @realloc(ptr '
+    text = str.concat text, backend_operand old
+    text = str.concat text, ', i64 '
+    text = str.concat text, bytes
+    text = str.concat text, ')'
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_lower_decoded [str op, str a, str b, str c, str d, str e] int [
+    if [str.eq op, 'label'] [
+        backend_emit_line str.concat a, ':'
+        = 0
+    ]
+    if [str.eq op, 'branch'] [
+        str text = str.concat '  br label %', a
+        backend_emit_line text
+        = 0
+    ]
+    if [str.eq op, 'cbranch'] [
+        str text2 = str.concat '  br i1 ', backend_operand a
+        text2 = str.concat text2, ', label %'
+        text2 = str.concat text2, b
+        text2 = str.concat text2, ', label %'
+        text2 = str.concat text2, c
+        backend_emit_line text2
+        = 0
+    ]
+    if [str.eq op, 'unreachable'] [
+        backend_emit_line '  unreachable'
+        = 0
+    ]
+    if [str.eq op, 'stack_alloc'] [ = backend_lower_alloca a, b ]
+    if [str.eq op, 'load'] [ = backend_lower_load a, b, c ]
+    if [str.eq op, 'store'] [ = backend_lower_store a, b, c ]
+    if [str.eq op, 'array_addr'] [ = backend_lower_array_addr a, b, c, d ]
+    if [str.eq op, 'pointer_addr'] [ = backend_lower_pointer_addr a, b, c, d ]
+    if [str.eq op, 'field_addr'] [ = backend_lower_field_addr a, b, c, d ]
+    if [str.eq op, 'truthy_pointer'] [ = backend_lower_truthy_pointer a, b ]
+    if [str.eq op, 'truthy_float'] [ = backend_lower_truthy_float a, b ]
+    if [str.eq op, 'truthy_int'] [ = backend_lower_truthy_int a, b ]
+    if [str.eq op, 'not_bool'] [ = backend_lower_not_bool a, b ]
+    if [str.eq op, 'bool_to_int' or str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [
+        = backend_lower_cast op, a, b
+    ]
+    if [str.eq op, 'logic'] [ = backend_lower_logic a, b, c, d ]
+    if [str.eq op, 'compare_int' or str.eq op, 'compare_bool' or str.eq op, 'compare_pointer' or str.eq op, 'compare_float'] [
+        = backend_lower_compare op, a, b, c, d
+    ]
+    if [str.eq op, 'arith_int' or str.eq op, 'arith_float'] [ = backend_lower_arith op, a, b, c, d ]
+    if [str.eq op, 'call'] [ = backend_lower_call a, b, c, d, e ]
+    if [str.eq op, 'phi'] [ = backend_lower_phi a, b, c, e ]
+    if [str.eq op, 'return'] [
+        str text3 = str.concat '  ret ', backend_abi_type a
+        text3 = str.concat text3, ' '
+        text3 = str.concat text3, backend_operand b
+        backend_emit_line text3
+        = 0
+    ]
+    if [str.eq op, 'alloc'] [ = backend_lower_alloc a, b, c ]
+    if [str.eq op, 'realloc'] [ = backend_lower_realloc a, b, c, d ]
+    if [str.eq op, 'free'] [
+        str text4 = str.concat '  call void @free(ptr ', backend_operand a
+        text4 = str.concat text4, ')'
+        backend_emit_line text4
+        = 0
+    ]
+    if [str.eq op, 'print_line'] [
+        str text5 = str.concat '  call i32 @puts(ptr ', backend_operand a
+        text5 = str.concat text5, ')'
+        backend_emit_line text5
+        = 0
+    ]
+    = 0
+]
+
+fn backend_lower_record [str line] int [
+    str op = ir_record_field line, 0
+    str a = ir_record_field line, 1
+    str b = ir_record_field line, 2
+    str c = ir_record_field line, 3
+    str d = ir_record_field line, 4
+    str e = ir_record_field line, 5
+    backend_lower_decoded op, a, b, c, d, e
+    sys.free op
+    sys.free a
+    sys.free b
+    sys.free c
+    sys.free d
+    sys.free e
+    = 0
+]

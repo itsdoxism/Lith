@@ -1,0 +1,218 @@
+# LLVM lowering backend for Lith typed IR.
+#
+# This module is the only compiler module that knows LLVM instruction text,
+# LLVM primitive spellings, target register syntax, and luna_* runtime symbols.
+
+str g_backend_string_sizes = ''
+int g_backend_temp = 0
+
+fn backend_type [str typ] str [
+    if [str.eq typ, 'int'] [ = 'i32' ]
+    if [str.eq typ, 'char'] [ = 'i32' ]
+    if [str.eq typ, 'bool'] [ = 'i1' ]
+    if [str.eq typ, 'float'] [ = 'double' ]
+    if [str.eq typ, 'str'] [ = 'ptr' ]
+    if [str.starts typ, 'ptr '] [ = 'ptr' ]
+    = typ
+]
+
+fn backend_storage_type [str typ] str [
+    if [str.starts typ, 'arr '] [
+        str elem = array_elem_type typ
+        str count = array_count_text typ
+        str out = str.concat '[', count
+        out = str.concat out, ' x '
+        out = str.concat out, backend_storage_type elem
+        = str.concat out, ']'
+    ]
+    if [is_struct_type typ] [ = str.concat '%struct.', typ ]
+    = backend_type typ
+]
+
+fn backend_abi_type [str typ] str [
+    if [is_aggregate_type typ] [ = backend_storage_type typ ]
+    = backend_type typ
+]
+
+fn backend_append_buffer [str buffer, str text] str [
+    str next = str.concat buffer, text
+    sys.free buffer
+    = next
+]
+
+fn backend_emit_line [str text] int [
+    g_out = backend_append_buffer g_out, text
+    g_out = backend_append_buffer g_out, g_newline
+    = 0
+]
+
+fn backend_emit_string_line [str text] int [
+    g_strings = backend_append_buffer g_strings, text
+    g_strings = backend_append_buffer g_strings, g_newline
+    = 0
+]
+
+fn backend_new_temp [int unused] str [
+    g_backend_temp = g_backend_temp add 1
+    = str.concat '%b', int.str g_backend_temp
+]
+
+fn backend_hex_digit [int n] str [
+    if [n lt 10] [
+        int code = n add 48
+        = str.chr code
+    ]
+    int code2 = n sub 10 add 65
+    = str.chr code2
+]
+
+fn backend_hex_byte [int c] str [
+    int hi = c div 16
+    int lo = c mod 16
+    str out = str.chr 92
+    str hi_text = backend_hex_digit hi
+    out = str.concat out, hi_text
+    str lo_text = backend_hex_digit lo
+    = str.concat out, lo_text
+]
+
+fn backend_register_string [int id, str text] int [
+    str id_text = int.str id
+    int n = str.len text
+    int size = n add 1
+    g_backend_string_sizes = map_put g_backend_string_sizes, id_text, int.str size
+
+    str data = ''
+    int i = 0
+    while [i lt n] [
+        int ch = str.at text, i
+        str byte = backend_hex_byte ch
+        data = str.concat data, byte
+        i = i add 1
+    ]
+    str slash = str.chr 92
+    data = str.concat data, slash
+    data = str.concat data, '00'
+    str q = str.chr 34
+    str name = str.concat '@.str.', id_text
+    str decl = str.concat name, ' = private unnamed_addr constant ['
+    decl = str.concat decl, int.str size
+    decl = str.concat decl, ' x i8] c'
+    decl = str.concat decl, q
+    decl = str.concat decl, data
+    decl = str.concat decl, q
+    decl = str.concat decl, ', align 1'
+    backend_emit_string_line decl
+    = 0
+]
+
+fn backend_operand [str value] str [
+    if [str.starts value, '$v'] [
+        int n = str.len value
+        str id = str.slice value, 2, n
+        = str.concat '%r', id
+    ]
+    if [str.starts value, '$p:'] [
+        int n2 = str.len value
+        str name = str.slice value, 3, n2
+        = str.concat '%arg.', name
+    ]
+    if [str.starts value, '$g:'] [
+        int n3 = str.len value
+        str name2 = str.slice value, 3, n3
+        = str.concat '@', name2
+    ]
+    if [str.starts value, '$s:'] [
+        int n4 = str.len value
+        str id2 = str.slice value, 3, n4
+        str size = map_get g_backend_string_sizes, id2
+        str out = str.concat 'getelementptr inbounds ([', size
+        out = str.concat out, ' x i8], ptr @.str.'
+        out = str.concat out, id2
+        out = str.concat out, ', i64 0, i64 0)'
+        = out
+    ]
+    if [str.eq value, '$zero'] [ = 'zeroinitializer' ]
+    = value
+]
+
+fn backend_symbol_name [str name] str [
+    if [str.eq name, 'io.read_text'] [ = 'luna_read_text' ]
+    if [str.eq name, 'io.write_text'] [ = 'luna_write_text' ]
+    if [str.eq name, 'str.len'] [ = 'luna_str_len' ]
+    if [str.eq name, 'str.at'] [ = 'luna_str_at' ]
+    if [str.eq name, 'str.slice'] [ = 'luna_str_slice' ]
+    if [str.eq name, 'str.concat'] [ = 'luna_str_concat' ]
+    if [str.eq name, 'str.eq'] [ = 'luna_str_eq' ]
+    if [str.eq name, 'str.starts'] [ = 'luna_str_starts' ]
+    if [str.eq name, 'str.trim'] [ = 'luna_str_trim' ]
+    if [str.eq name, 'str.chr'] [ = 'luna_str_chr' ]
+    if [str.eq name, 'int.str'] [ = 'luna_int_str' ]
+    = name
+]
+
+fn backend_emit_assign1 [str out, str inst, str typ, str value] int [
+    str text = backend_operand out
+    text = str.concat text, ' = '
+    text = str.concat text, inst
+    text = str.concat text, ' '
+    text = str.concat text, typ
+    text = str.concat text, ' '
+    text = str.concat text, backend_operand value
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_emit_binary [str out, str inst, str typ, str left, str right] int [
+    str text = backend_operand out
+    text = str.concat text, ' = '
+    text = str.concat text, inst
+    text = str.concat text, ' '
+    text = str.concat text, typ
+    text = str.concat text, ' '
+    text = str.concat text, backend_operand left
+    text = str.concat text, ', '
+    text = str.concat text, backend_operand right
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_lower_alloca [str out, str typ] int [
+    str text = backend_operand out
+    text = str.concat text, ' = alloca '
+    text = str.concat text, backend_storage_type typ
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_lower_load [str out, str typ, str addr] int [
+    str text = backend_operand out
+    text = str.concat text, ' = load '
+    text = str.concat text, backend_storage_type typ
+    text = str.concat text, ', ptr '
+    text = str.concat text, backend_operand addr
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_lower_store [str typ, str value, str addr] int [
+    str text = str.concat '  store ', backend_storage_type typ
+    text = str.concat text, ' '
+    text = str.concat text, backend_operand value
+    text = str.concat text, ', ptr '
+    text = str.concat text, backend_operand addr
+    backend_emit_line text
+    = 0
+]
+
+fn backend_lower_array_addr [str out, str array_type, str addr, str index] int [
+    str text = backend_operand out
+    text = str.concat text, ' = getelementptr inbounds '
+    text = str.concat text, backend_storage_type array_type
+    text = str.concat text, ', ptr '
+    text = str.concat text, backend_operand addr
+    text = str.concat text, ', i32 0, i32 '
+    text = str.concat text, backend_operand index
+    backend_emit_line str.concat '  ', text
+    = 0
+]

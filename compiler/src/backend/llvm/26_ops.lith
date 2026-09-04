@@ -1,0 +1,141 @@
+fn backend_lower_pointer_addr [str out, str elem_type, str ptr, str index] int [
+    str text = backend_operand out
+    text = str.concat text, ' = getelementptr inbounds '
+    text = str.concat text, backend_storage_type elem_type
+    text = str.concat text, ', ptr '
+    text = str.concat text, backend_operand ptr
+    text = str.concat text, ', i32 '
+    text = str.concat text, backend_operand index
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_lower_field_addr [str out, str struct_type, str addr, str field_index] int [
+    str text = backend_operand out
+    text = str.concat text, ' = getelementptr inbounds '
+    text = str.concat text, backend_storage_type struct_type
+    text = str.concat text, ', ptr '
+    text = str.concat text, backend_operand addr
+    text = str.concat text, ', i32 0, i32 '
+    text = str.concat text, field_index
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_lower_truthy_pointer [str out, str value] int [
+    str text = backend_operand out
+    text = str.concat text, ' = icmp ne ptr '
+    text = str.concat text, backend_operand value
+    text = str.concat text, ', null'
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_lower_truthy_float [str out, str value] int [
+    str text = backend_operand out
+    text = str.concat text, ' = fcmp une double '
+    text = str.concat text, backend_operand value
+    text = str.concat text, ', 0.0'
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_lower_truthy_int [str out, str value] int [
+    str text = backend_operand out
+    text = str.concat text, ' = icmp ne i32 '
+    text = str.concat text, backend_operand value
+    text = str.concat text, ', 0'
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_lower_not_bool [str out, str value] int [
+    = backend_emit_binary out, 'xor', 'i1', value, 'true'
+]
+
+fn backend_lower_cast [str kind, str out, str value] int [
+    str inst = 'zext'
+    str from_type = 'i1'
+    str to_type = 'i32'
+    if [str.eq kind, 'int_to_float'] [
+        inst = 'sitofp'
+        from_type = 'i32'
+        to_type = 'double'
+    ]
+    if [str.eq kind, 'bool_to_float'] [
+        inst = 'uitofp'
+        from_type = 'i1'
+        to_type = 'double'
+    ]
+    if [str.eq kind, 'float_to_int'] [
+        inst = 'fptosi'
+        from_type = 'double'
+        to_type = 'i32'
+    ]
+    str text = backend_operand out
+    text = str.concat text, ' = '
+    text = str.concat text, inst
+    text = str.concat text, ' '
+    text = str.concat text, from_type
+    text = str.concat text, ' '
+    text = str.concat text, backend_operand value
+    text = str.concat text, ' to '
+    text = str.concat text, to_type
+    backend_emit_line str.concat '  ', text
+    = 0
+]
+
+fn backend_int_pred [str op] str [
+    if [str.eq op, 'ne'] [ = 'ne' ]
+    if [str.eq op, 'gt'] [ = 'sgt' ]
+    if [str.eq op, 'lt'] [ = 'slt' ]
+    if [str.eq op, 'ge'] [ = 'sge' ]
+    if [str.eq op, 'le'] [ = 'sle' ]
+    = 'eq'
+]
+
+fn backend_float_pred [str op] str [
+    if [str.eq op, 'ne'] [ = 'une' ]
+    if [str.eq op, 'gt'] [ = 'ogt' ]
+    if [str.eq op, 'lt'] [ = 'olt' ]
+    if [str.eq op, 'ge'] [ = 'oge' ]
+    if [str.eq op, 'le'] [ = 'ole' ]
+    = 'oeq'
+]
+
+fn backend_lower_compare [str kind, str out, str op, str left, str right] int [
+    if [str.eq kind, 'compare_float'] [
+        str pred = backend_float_pred op
+        str inst = str.concat 'fcmp ', pred
+        = backend_emit_binary out, inst, 'double', left, right
+    ]
+    str pred2 = backend_int_pred op
+    str typ = 'i32'
+    if [str.eq kind, 'compare_bool'] [ typ = 'i1' ]
+    if [str.eq kind, 'compare_pointer'] [ typ = 'ptr' ]
+    str inst2 = str.concat 'icmp ', pred2
+    = backend_emit_binary out, inst2, typ, left, right
+]
+
+fn backend_lower_logic [str out, str op, str left, str right] int [
+    str inst = 'and'
+    if [str.eq op, 'or'] [ inst = 'or' ]
+    = backend_emit_binary out, inst, 'i1', left, right
+]
+
+fn backend_lower_arith [str kind, str out, str op, str left, str right] int [
+    if [str.eq kind, 'arith_float'] [
+        str inst = 'fadd'
+        if [str.eq op, 'sub'] [ inst = 'fsub' ]
+        if [str.eq op, 'mul'] [ inst = 'fmul' ]
+        if [str.eq op, 'div'] [ inst = 'fdiv' ]
+        if [str.eq op, 'mod'] [ inst = 'frem' ]
+        = backend_emit_binary out, inst, 'double', left, right
+    ]
+    str inst2 = 'add'
+    if [str.eq op, 'sub'] [ inst2 = 'sub' ]
+    if [str.eq op, 'mul'] [ inst2 = 'mul' ]
+    if [str.eq op, 'div'] [ inst2 = 'sdiv' ]
+    if [str.eq op, 'mod'] [ inst2 = 'srem' ]
+    = backend_emit_binary out, inst2, 'i32', left, right
+]

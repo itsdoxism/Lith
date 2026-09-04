@@ -1,0 +1,114 @@
+fn backend_const_array [str typ, str values, int count] str [
+    str elem = array_elem_type typ
+    str out = '[ '
+    int i = 0
+    while [i lt count] [
+        if [i gt 0] [ out = str.concat out, ', ' ]
+        str key = int.str i
+        str value = map_get values, key
+        out = str.concat out, backend_storage_type elem
+        out = str.concat out, ' '
+        out = str.concat out, backend_operand value
+        i = i add 1
+    ]
+    = str.concat out, ' ]'
+]
+
+fn backend_const_struct [str typ, str values, int count] str [
+    str out = '{ '
+    int i = 0
+    while [i lt count] [
+        if [i gt 0] [ out = str.concat out, ', ' ]
+        str field = struct_field_name typ, i
+        str field_type = struct_field_type typ, field
+        str key = int.str i
+        str value = map_get values, key
+        out = str.concat out, backend_storage_type field_type
+        out = str.concat out, ' '
+        out = str.concat out, backend_operand value
+        i = i add 1
+    ]
+    = str.concat out, ' }'
+]
+
+fn backend_module_begin [int unused] int [
+    g_backend_string_sizes = ''
+    backend_emit_line '; Lith self-hosted LLVM backend'
+    backend_emit_line ''
+    backend_emit_line 'declare ptr @luna_read_text(ptr)'
+    backend_emit_line 'declare i32 @luna_write_text(ptr, ptr)'
+    backend_emit_line 'declare i32 @luna_str_len(ptr)'
+    backend_emit_line 'declare i32 @luna_str_at(ptr, i32)'
+    backend_emit_line 'declare ptr @luna_str_slice(ptr, i32, i32)'
+    backend_emit_line 'declare ptr @luna_str_concat(ptr, ptr)'
+    backend_emit_line 'declare i32 @luna_str_eq(ptr, ptr)'
+    backend_emit_line 'declare i32 @luna_str_starts(ptr, ptr)'
+    backend_emit_line 'declare ptr @luna_str_trim(ptr)'
+    backend_emit_line 'declare ptr @luna_str_chr(i32)'
+    backend_emit_line 'declare ptr @luna_int_str(i32)'
+    backend_emit_line 'declare ptr @malloc(i64)'
+    backend_emit_line 'declare ptr @realloc(ptr, i64)'
+    backend_emit_line 'declare void @free(ptr)'
+    backend_emit_line 'declare i32 @puts(ptr)'
+    backend_emit_line ''
+    = 0
+]
+
+fn backend_struct_decl [str name, str fields, int count] int [
+    str text = str.concat '%struct.', name
+    text = str.concat text, ' = type { '
+    int i = 0
+    while [i lt count] [
+        if [i gt 0] [ text = str.concat text, ', ' ]
+        str typ = ir_field_type_at fields, i
+        text = str.concat text, backend_storage_type typ
+        i = i add 1
+    ]
+    text = str.concat text, ' }'
+    backend_emit_line text
+    backend_emit_line ''
+    = 0
+]
+
+fn backend_global_decl [str name, str typ, str value] int [
+    str text = str.concat '@', name
+    text = str.concat text, ' = global '
+    text = str.concat text, backend_storage_type typ
+    text = str.concat text, ' '
+    text = str.concat text, backend_operand value
+    backend_emit_line text
+    = 0
+]
+
+fn backend_begin_function [str name, str ret, str params, int count] int [
+    g_backend_temp = 0
+    str text = str.concat 'define ', backend_abi_type ret
+    text = str.concat text, ' @'
+    text = str.concat text, name
+    text = str.concat text, '('
+    int i = 0
+    while [i lt count] [
+        if [i gt 0] [ text = str.concat text, ', ' ]
+        str typ = ir_param_type params, i
+        str pname = ir_param_name params, i
+        text = str.concat text, backend_abi_type typ
+        text = str.concat text, ' %arg.'
+        text = str.concat text, pname
+        i = i add 1
+    ]
+    text = str.concat text, ') {'
+    backend_emit_line text
+    backend_emit_line 'entry:'
+    = 0
+]
+
+fn backend_end_function [int unused] int [
+    backend_emit_line '}'
+    backend_emit_line ''
+    = 0
+]
+
+fn backend_module_finish [int unused] str [
+    g_out = backend_append_buffer g_out, g_strings
+    = g_out
+]
