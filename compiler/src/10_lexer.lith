@@ -2,9 +2,72 @@ fn append_char [str s, int c] str [
     = str.concat s, str.chr c
 ]
 
-fn fail [str msg] int [
+fn diagnostic_line_start [int pos] int [
+    int start = pos
+    while [start gt 0] [
+        int before = start sub 1
+        if [str.at g_src, before eq 10] [ break ]
+        start = before
+    ]
+    = start
+]
+
+fn diagnostic_line_end [int pos] int [
+    int n = str.len g_src
+    int finish = pos
+    while [finish lt n and str.at g_src, finish ne 10] [
+        finish = finish add 1
+    ]
+    = finish
+]
+
+fn make_diagnostic [str msg, int line, int start, int finish] str [
+    int line_start = diagnostic_line_start start
+    int line_end = diagnostic_line_end start
+    str source_line = str.slice g_src, line_start, line_end
+
+    str out = 'error: line '
+    out = str.concat out, int.str line
+    out = str.concat out, ': '
+    out = str.concat out, msg
+    out = str.concat out, str.chr 10
+    out = str.concat out, '    '
+    out = str.concat out, source_line
+    out = str.concat out, str.chr 10
+    out = str.concat out, '    '
+
+    int column = start sub line_start
+    int i = 0
+    while [i lt column] [
+        out = str.concat out, ' '
+        i = i add 1
+    ]
+    out = str.concat out, '^'
+
+    int span = finish sub start
+    if [span lt 1] [ span = 1 ]
+    int mark = 1
+    while [mark lt span] [
+        out = str.concat out, '~'
+        mark = mark add 1
+    ]
+    = out
+]
+
+fn fail_at [str msg, int line, int start, int finish] int [
+    if [g_error eq 0] [
+        g_error_message = make_diagnostic msg, line, start, finish
+    ]
     g_error = 1
     = 0
+]
+
+fn fail [str msg] int [
+    = fail_at msg, g_tok_line, g_tok_start, g_tok_end
+]
+
+fn fail_prev [str msg] int [
+    = fail_at msg, g_prev_line, g_prev_start, g_prev_end
 ]
 
 fn is_alpha [int c] int [
@@ -16,6 +79,10 @@ fn is_digit [int c] int [
 ]
 
 fn next_tok [int unused] int [
+    g_prev_start = g_tok_start
+    g_prev_end = g_tok_end
+    g_prev_line = g_tok_line
+
     int n = str.len g_src
     while [g_pos lt n] [
         int c = str.at g_src, g_pos
@@ -29,11 +96,16 @@ fn next_tok [int unused] int [
             ]
             continue
         ]
+
+        g_tok_start = g_pos
+        g_tok_line = g_line
+
         if [c eq 10] [
             g_pos = g_pos add 1
-            g_line = g_line add 1
+            g_tok_end = g_pos
             g_kind = 'nl'
             g_text = ''
+            g_line = g_line add 1
             = 0
         ]
         if [c eq 39] [
@@ -43,13 +115,17 @@ fn next_tok [int unused] int [
                 int q = str.at g_src, g_pos
                 if [q eq 39] [
                     g_pos = g_pos add 1
+                    g_tok_end = g_pos
                     g_kind = 'str'
                     g_text = s
                     = 0
                 ]
                 if [q eq 92] [
                     g_pos = g_pos add 1
-                    if [g_pos ge n] [ = fail 'unterminated escape' ]
+                    if [g_pos ge n] [
+                        g_tok_end = g_pos
+                        = fail 'unterminated escape'
+                    ]
                     int e = str.at g_src, g_pos
                     if [e eq 110] [ s = append_char s, 10 ]
                     else [
@@ -65,6 +141,7 @@ fn next_tok [int unused] int [
                 s = append_char s, q
                 g_pos = g_pos add 1
             ]
+            g_tok_end = g_pos
             = fail 'unterminated string'
         ]
         if [is_alpha c] [
@@ -75,6 +152,7 @@ fn next_tok [int unused] int [
                 if [not is_alpha a and not is_digit a] [ break ]
                 g_pos = g_pos add 1
             ]
+            g_tok_end = g_pos
             g_kind = 'id'
             g_text = str.slice g_src, start, g_pos
             = 0
@@ -93,10 +171,12 @@ fn next_tok [int unused] int [
                 ]
                 g_kind = 'float'
             ]
+            g_tok_end = g_pos
             g_text = str.slice g_src, startn, g_pos
             = 0
         ]
         g_pos = g_pos add 1
+        g_tok_end = g_pos
         if [c eq 91] [ g_kind = 'lb' g_text = '[' = 0 ]
         if [c eq 93] [ g_kind = 'rb' g_text = ']' = 0 ]
         if [c eq 44] [ g_kind = 'comma' g_text = ',' = 0 ]
@@ -104,6 +184,9 @@ fn next_tok [int unused] int [
         if [c eq 46] [ g_kind = 'dot' g_text = '.' = 0 ]
         = fail 'unexpected character'
     ]
+    g_tok_start = g_pos
+    g_tok_end = g_pos
+    g_tok_line = g_line
     g_kind = 'eof'
     g_text = ''
     = 0
@@ -115,6 +198,12 @@ fn reset [str source] int [
     g_line = 1
     g_kind = 'eof'
     g_text = ''
+    g_tok_start = 0
+    g_tok_end = 0
+    g_tok_line = 1
+    g_prev_start = 0
+    g_prev_end = 0
+    g_prev_line = 1
     = next_tok 0
 ]
 

@@ -30,7 +30,12 @@ fn emit_sys_memory [str target_type] str [
     if [str.eq method, 'alloc'] [
         str count = parse_expr 6
         str count_type = g_expr_type
-        count = intify count, count_type
+        if [not str.eq count_type, 'int' and not str.eq count_type, 'char'] [
+            str msg = str.concat 'sys.alloc count must be int, got ', count_type
+            fail_prev msg
+            count = '0'
+        ]
+        else [ count = intify count, count_type ]
         str bytes = emit_alloc_size target_type, count
         str out = new_reg 0
         str call = str.concat out, ' = call ptr @malloc(i64 '
@@ -45,11 +50,20 @@ fn emit_sys_memory [str target_type] str [
     if [str.eq method, 'realloc'] [
         str old = parse_expr 6
         str old_type = g_expr_type
+        if [not str.starts old_type, 'ptr '] [
+            str pmsg = str.concat 'sys.realloc expects pointer, got ', old_type
+            fail_prev pmsg
+        ]
         if [str.eq g_kind, 'comma'] [ next_tok 0 ]
         else [ fail 'sys.realloc expects pointer and count' ]
         str count2 = parse_expr 6
         str count_type2 = g_expr_type
-        count2 = intify count2, count_type2
+        if [not str.eq count_type2, 'int' and not str.eq count_type2, 'char'] [
+            str cmsg = str.concat 'sys.realloc count must be int, got ', count_type2
+            fail_prev cmsg
+            count2 = '0'
+        ]
+        else [ count2 = intify count2, count_type2 ]
         str actual_type = target_type
         if [not str.starts actual_type, 'ptr '] [ actual_type = old_type ]
         str bytes2 = emit_alloc_size actual_type, count2
@@ -67,6 +81,11 @@ fn emit_sys_memory [str target_type] str [
 
     if [str.eq method, 'free'] [
         str old2 = parse_expr 6
+        str old_type2 = g_expr_type
+        if [not str.starts old_type2, 'ptr '] [
+            str fmsg = str.concat 'sys.free expects pointer, got ', old_type2
+            fail_prev fmsg
+        ]
         str call3 = str.concat 'call void @free(ptr ', old2
         call3 = str.concat call3, ')'
         emit_inst call3
@@ -75,7 +94,7 @@ fn emit_sys_memory [str target_type] str [
         = '0'
     ]
 
-    fail 'unknown sys memory operation'
+    fail_prev 'unknown sys memory operation'
     g_expr_type = target_type
     g_expr_addr = ''
     = '0'
@@ -108,7 +127,7 @@ fn parse_array_decl_ir [str name] int [
         str value = parse_expr 0
         str value_type = g_expr_type
         if [count eq 0] [ elem_type = value_type ]
-        else [ value = cast_value value, value_type, elem_type ]
+        else [ value = checked_cast value, value_type, elem_type ]
         str key = int.str count
         values = map_put values, key, value
         count = count add 1
@@ -141,6 +160,11 @@ fn parse_array_decl_ir [str name] int [
 fn parse_decl_ir [int unused] int [
     str typ = parse_type 0
     str name = g_text
+    str existing = map_get g_locals, name
+    if [not str.eq existing, ''] [
+        str dmsg = str.concat 'duplicate local: ', name
+        fail dmsg
+    ]
     next_tok 0
     expect_kind 'assign'
     if [str.eq typ, 'arr'] [
@@ -159,7 +183,7 @@ fn parse_decl_ir [int unused] int [
         value = parse_expr 0
     ]
     str vt = g_expr_type
-    value = cast_value value, vt, typ
+    value = checked_cast value, vt, typ
     str st = str.concat 'store ', storage_type typ
     st = str.concat st, ' '
     st = str.concat st, value

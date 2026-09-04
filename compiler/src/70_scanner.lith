@@ -23,15 +23,26 @@ fn skip_block [int unused] int [
 fn scan_struct [int unused] int [
     expect_id 'struct'
     str name = g_text
+    str existing_struct = map_get g_struct_counts, name
+    if [not str.eq existing_struct, ''] [
+        str smsg = str.concat 'duplicate struct: ', name
+        fail smsg
+    ]
     next_tok 0
     expect_kind 'lb'
     skip_nl 0
     int index = 0
     while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
         str typ = parse_type 0
+        if [str.eq typ, 'arr'] [ fail 'array struct fields are not supported yet' ]
         str field = g_text
-        next_tok 0
         str key = struct_key name, field
+        str existing_field = map_get g_struct_types, key
+        if [not str.eq existing_field, ''] [
+            str fmsg = str.concat 'duplicate struct field: ', field
+            fail fmsg
+        ]
+        next_tok 0
         g_struct_indices = map_put g_struct_indices, key, int.str index
         g_struct_types = map_put g_struct_types, key, typ
         index = index add 1
@@ -45,12 +56,25 @@ fn scan_struct [int unused] int [
 fn scan_function [int unused] int [
     expect_id 'fn'
     str name = g_text
+    str existing_fn = map_get g_fn_ret, name
+    if [not str.eq existing_fn, ''] [
+        str dmsg = str.concat 'duplicate function: ', name
+        fail dmsg
+    ]
     next_tok 0
     expect_kind 'lb'
     int argc = 0
+    str param_names = ''
     while [not str.eq g_kind, 'rb'] [
         str typ = parse_type 0
+        if [str.eq typ, 'arr'] [ fail 'array parameters are not supported yet' ]
         str pname = g_text
+        str seen_param = map_get param_names, pname
+        if [not str.eq seen_param, ''] [
+            str pmsg = str.concat 'duplicate parameter: ', pname
+            fail pmsg
+        ]
+        param_names = map_put param_names, pname, '1'
         next_tok 0
         str pkey = fn_param_key name, argc
         g_fn_params = map_put g_fn_params, pkey, typ
@@ -62,6 +86,7 @@ fn scan_function [int unused] int [
     str ret = 'int'
     if [str.eq g_kind, 'id'] [
         ret = g_text
+        if [str.eq ret, 'arr'] [ fail 'array return types are not supported yet' ]
         next_tok 0
     ]
     g_fn_ret = map_put g_fn_ret, name, ret
@@ -73,6 +98,12 @@ fn scan_function [int unused] int [
 fn scan_global [int unused] int [
     str typ = parse_type 0
     str name = g_text
+    str existing_global = map_get g_globals, name
+    if [not str.eq existing_global, ''] [
+        str dmsg = str.concat 'duplicate global: ', name
+        fail dmsg
+    ]
+    if [str.eq typ, 'arr'] [ fail 'global arrays are not supported yet' ]
     next_tok 0
     expect_kind 'assign'
     g_globals = map_put g_globals, name, typ
