@@ -75,8 +75,8 @@ fn struct_field_name [str name, int index] str [
     = map_get g_struct_field_names, key
 ]
 
-# Luna LLVM compiler bootstrap subset, written in Luna.
-# This compiler emits typed LLVM IR directly for the subset needed to compile itself.
+# Lith self-hosted LLVM compiler state. Public source is Lith; historical
+# luna_* runtime ABI names are intentionally retained for bootstrap stability.
 use io
 use str
 use int
@@ -84,6 +84,7 @@ use int
 str g_src = ''
 int g_pos = 0
 int g_line = 1
+str g_source_file = ''
 str g_kind = 'eof'
 str g_text = ''
 int g_error = 0
@@ -93,9 +94,11 @@ str g_error_message = ''
 int g_tok_start = 0
 int g_tok_end = 0
 int g_tok_line = 1
+str g_tok_file = ''
 int g_prev_start = 0
 int g_prev_end = 0
 int g_prev_line = 1
+str g_prev_file = ''
 
 str g_out = ''
 str g_strings = ''
