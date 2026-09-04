@@ -8,6 +8,7 @@ LLVM_LUNAC := compiler/lunac_llvm.py
 RUNTIME := runtime/luna_runtime.c
 RUNTIME_H := runtime/luna_runtime.h
 LLVM_RUNTIME := runtime/luna_runtime.ll
+BOOTSTRAP_GEN := compiler/bootstrap/build_reference_parity.py
 BOOTSTRAP_PARTS := \
 	compiler/bootstrap/lunac_llvm.part0.structs.luna \
 	compiler/bootstrap/lunac_llvm.part1.luna \
@@ -16,15 +17,15 @@ BOOTSTRAP_PARTS := \
 BOOTSTRAP_SRC := $(BUILD)/lunac_llvm.luna
 SELF_LUNAC := $(BUILD)/lunac
 
-.PHONY: all compiler driver-check test selfhost llvm llvm-check llvm-selfhost clean
+.PHONY: all compiler driver-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
 
 all: compiler
 
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BOOTSTRAP_SRC): $(BOOTSTRAP_PARTS) | $(BUILD)
-	cat $(BOOTSTRAP_PARTS) > $@
+$(BOOTSTRAP_SRC): $(BOOTSTRAP_PARTS) $(BOOTSTRAP_GEN) | $(BUILD)
+	$(PYTHON) $(BOOTSTRAP_GEN) $@
 
 $(BUILD)/lunac-stage1.ll: $(BOOTSTRAP_SRC) $(LLVM_LUNAC) | $(BUILD)
 	$(PYTHON) $(LLVM_LUNAC) $< $@
@@ -64,7 +65,7 @@ llvm-check:
 	PYTHON=$(PYTHON) CLANG=$(CLANG) BUILD=$(BUILD)/llvm LLVM_LUNAC=$(LLVM_LUNAC) C_LUNAC=$(LUNAC) LLVM_RUNTIME=$(LLVM_RUNTIME) sh tests/llvm_backend.sh
 
 llvm-selfhost:
-	PYTHON=$(PYTHON) CLANG=$(CLANG) BUILD=$(BUILD)/llvm-selfhost LLVM_LUNAC=$(LLVM_LUNAC) LLVM_RUNTIME=$(LLVM_RUNTIME) sh tests/llvm_self_host.sh
+	PYTHON=$(PYTHON) CLANG=$(CLANG) BUILD=$(BUILD)/llvm-selfhost LLVM_LUNAC=$(LLVM_LUNAC) LLVM_RUNTIME=$(LLVM_RUNTIME) BOOTSTRAP_GEN=$(BOOTSTRAP_GEN) sh tests/llvm_self_host.sh
 
 driver-check: compiler
 	sh bin/luna tests/selfhost_memory.luna -o $(BUILD)/driver-memory
@@ -73,11 +74,15 @@ driver-check: compiler
 	$(BUILD)/driver-structs
 	@echo 'Native Luna driver + memory + struct member parity: passed'
 
+reference-selfhost: compiler
+	BUILD=$(BUILD) sh tests/reference_selfhost.sh
+
 test: compiler $(BUILD)/reference $(BUILD)/reference-llvm
 	$(BUILD)/reference
 	$(BUILD)/reference-llvm
-	$(PYTHON) -m py_compile $(LUNAC) $(LLVM_LUNAC)
+	$(PYTHON) -m py_compile $(LUNAC) $(LLVM_LUNAC) $(BOOTSTRAP_GEN)
 	$(MAKE) driver-check
+	$(MAKE) reference-selfhost
 	$(MAKE) selfhost
 	$(MAKE) llvm-check
 	$(MAKE) llvm-selfhost
