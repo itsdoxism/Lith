@@ -46,9 +46,17 @@ check_compile_error \
     bad-array-length \
     'array literal length does not match its fixed array type'
 check_compile_error \
+    "$ROOT/tests/core/bad_array_overflow.lith" \
+    bad-array-overflow \
+    'too many values in array literal'
+check_compile_error \
     "$ROOT/tests/core/bad_cast.lith" \
     bad-cast \
     'invalid explicit cast: str as int'
+check_compile_error \
+    "$ROOT/tests/core/bad_zero_call.lith" \
+    bad-zero-call \
+    'zero-argument call requires []'
 check_compile_error \
     "$ROOT/tests/core/bad_recursive_struct.lith" \
     bad-recursive-struct \
