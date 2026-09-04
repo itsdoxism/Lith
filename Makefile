@@ -22,7 +22,7 @@ SELF_MODULES := \
 SELF_SRC := $(BUILD)/lithc.lith
 SELF_LITHC := $(BUILD)/lithc
 
-.PHONY: all compiler driver-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
+.PHONY: all compiler driver-check semantic-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
 
 all: compiler
 
@@ -81,6 +81,9 @@ driver-check: compiler
 	$(BUILD)/driver-arrays
 	@echo 'Native Lith driver + memory + struct + array parity: passed'
 
+semantic-check: compiler
+	sh tests/semantic_errors.sh
+
 reference-selfhost: compiler
 	BUILD=$(BUILD) sh tests/reference_selfhost.sh
 
@@ -89,6 +92,7 @@ test: compiler $(BUILD)/reference $(BUILD)/reference-llvm
 	$(BUILD)/reference-llvm
 	$(PYTHON) -m py_compile $(BOOTSTRAP_C) $(BOOTSTRAP_LLVM)
 	$(MAKE) driver-check
+	$(MAKE) semantic-check
 	$(MAKE) reference-selfhost
 	$(MAKE) selfhost
 	$(MAKE) llvm-check

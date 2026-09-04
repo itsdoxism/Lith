@@ -1,0 +1,5 @@
+fn main [] int [
+    arr values = [1, 2, 3]
+    int value = values['bad']
+    = value
+]

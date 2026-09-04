@@ -1,0 +1,8 @@
+fn add_two [int a, int b] int [
+    = a add b
+]
+
+fn main [] int [
+    int value = add_two 1
+    = value
+]

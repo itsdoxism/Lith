@@ -61,13 +61,22 @@ fn parse_stmt_ir [int unused] int [
         next_tok 0
         if [not str.eq g_kind, 'id'] [ = fail 'loop expects item name' ]
         str item = g_text
+        str existing_item = map_get g_locals, item
+        if [not str.eq existing_item, ''] [
+            str dmsg = str.concat 'duplicate local: ', item
+            fail dmsg
+        ]
         next_tok 0
         expect_id 'in'
         if [not str.eq g_kind, 'id'] [ = fail 'loop expects array name' ]
         str collection = g_text
         next_tok 0
         str collection_type = local_type collection
-        if [not str.starts collection_type, 'arr '] [ = fail 'loop currently requires array' ]
+        if [str.eq collection_type, ''] [
+            str umsg = str.concat 'unknown variable: ', collection
+            fail_prev umsg
+        ]
+        if [not str.starts collection_type, 'arr '] [ = fail_prev 'loop currently requires an array' ]
         str elem_type = array_elem_type collection_type
         str count = array_count_text collection_type
         str collection_addr = local_addr collection
@@ -157,11 +166,21 @@ fn parse_stmt_ir [int unused] int [
         = 0
     ]
     if [str.eq g_kind, 'id' and str.eq g_text, 'break'] [
+        if [str.eq g_break_label, ''] [
+            fail 'break used outside a loop'
+            next_tok 0
+            = 0
+        ]
         next_tok 0
         emit_branch g_break_label
         = 0
     ]
     if [str.eq g_kind, 'id' and str.eq g_text, 'continue'] [
+        if [str.eq g_continue_label, ''] [
+            fail 'continue used outside a loop'
+            next_tok 0
+            = 0
+        ]
         next_tok 0
         emit_branch g_continue_label
         = 0
@@ -173,7 +192,7 @@ fn parse_stmt_ir [int unused] int [
         ]
         str rv = parse_expr 0
         str rt = g_expr_type
-        rv = cast_value rv, rt, g_current_ret
+        rv = checked_cast rv, rt, g_current_ret
         emit_return g_current_ret, rv
         = 0
     ]
@@ -184,7 +203,7 @@ fn parse_stmt_ir [int unused] int [
         ]
         str rv2 = parse_expr 0
         str rt2 = g_expr_type
-        rv2 = cast_value rv2, rt2, g_current_ret
+        rv2 = checked_cast rv2, rt2, g_current_ret
         emit_return g_current_ret, rv2
         = 0
     ]
@@ -202,6 +221,11 @@ fn parse_stmt_ir [int unused] int [
     str lhs_type = g_expr_type
     str lhs_addr = g_expr_addr
     if [str.eq g_kind, 'assign'] [
+        int writable = 1
+        if [str.eq lhs_addr, ''] [
+            fail 'assignment target is not writable'
+            writable = 0
+        ]
         next_tok 0
         str rhs = ''
         if [str.eq g_kind, 'id' and str.eq g_text, 'sys'] [
@@ -211,7 +235,8 @@ fn parse_stmt_ir [int unused] int [
             rhs = parse_expr 0
         ]
         str rhs_type = g_expr_type
-        rhs = cast_value rhs, rhs_type, lhs_type
+        rhs = checked_cast rhs, rhs_type, lhs_type
+        if [writable eq 0] [ = 0 ]
         str st = str.concat 'store ', storage_type lhs_type
         st = str.concat st, ' '
         st = str.concat st, rhs

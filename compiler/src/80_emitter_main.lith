@@ -57,6 +57,11 @@ fn emit_function_ir [int unused] int [
         str typ = parse_type 0
         str pname = g_text
         next_tok 0
+        str existing = map_get g_locals, pname
+        if [not str.eq existing, ''] [
+            str pmsg = str.concat 'duplicate parameter: ', pname
+            fail_prev pmsg
+        ]
         g_locals = map_put g_locals, pname, typ
         str paddr = new_reg 0
         g_local_addrs = map_put g_local_addrs, pname, paddr
@@ -131,10 +136,12 @@ fn emit_header [int unused] int [
 
 fn compile_llvm [str source] str [
     g_error = 0
+    g_error_message = ''
     g_out = ''
     g_strings = ''
     g_string_id = 0
     scan_top source
+    if [g_error] [ = '' ]
     emit_header 0
     reset source
     skip_nl 0
@@ -156,6 +163,7 @@ fn compile_llvm [str source] str [
                 ]
             ]
         ]
+        if [g_error] [ = '' ]
         skip_nl 0
     ]
     g_out = str.concat g_out, g_strings
@@ -166,7 +174,10 @@ fn main [int argc, ptr str argv] int [
     if [argc lt 3] [ = 2 ]
     str source = io.read_text argv[1]
     str ir = compile_llvm source
-    if [g_error] [ = 1 ]
+    if [g_error] [
+        io.print '[g_error_message]'
+        = 1
+    ]
     int ok = io.write_text argv[2], ir
     if [ok eq 0] [ = 1 ]
     = 0

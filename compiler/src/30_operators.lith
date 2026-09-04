@@ -71,6 +71,12 @@ fn builtin_argc [str name] int [
     = 0
 ]
 
+fn call_argc_text [str name] str [
+    int builtin = builtin_argc name
+    if [builtin gt 0] [ = int.str builtin ]
+    = map_get g_fn_argc, name
+]
+
 fn builtin_param [str name, int index] str [
     if [str.eq name, 'io.read_text'] [ = 'str' ]
     if [str.eq name, 'io.write_text'] [ = 'str' ]
@@ -123,6 +129,22 @@ fn intify [str op, str typ] str [
     = op
 ]
 
+fn can_cast [str from, str to] int [
+    if [str.eq from, to] [ = 1 ]
+    if [str.eq to, 'bool'] [
+        if [str.eq from, 'int' or str.eq from, 'char' or str.eq from, 'str' or str.starts from, 'ptr '] [ = 1 ]
+        = 0
+    ]
+    if [str.eq to, 'int' or str.eq to, 'char'] [
+        if [str.eq from, 'int' or str.eq from, 'char' or str.eq from, 'bool'] [ = 1 ]
+        = 0
+    ]
+    if [str.eq to, 'str' and str.starts from, 'ptr '] [ = 1 ]
+    if [str.starts to, 'ptr ' and str.eq from, 'str'] [ = 1 ]
+    if [str.starts to, 'ptr ' and str.starts from, 'ptr '] [ = 1 ]
+    = 0
+]
+
 fn cast_value [str op, str from, str to] str [
     if [str.eq from, to] [ = op ]
     if [str.eq to, 'bool'] [ = boolify op, from ]
@@ -131,6 +153,16 @@ fn cast_value [str op, str from, str to] str [
     if [str.eq to, 'str' and str.starts from, 'ptr '] [ = op ]
     if [str.starts to, 'ptr ' and str.eq from, 'str'] [ = op ]
     if [str.starts to, 'ptr ' and str.starts from, 'ptr '] [ = op ]
+    = op
+]
+
+fn checked_cast [str op, str from, str to] str [
+    if [can_cast from, to] [ = cast_value op, from, to ]
+    str msg = 'type mismatch: expected '
+    msg = str.concat msg, to
+    msg = str.concat msg, ', got '
+    msg = str.concat msg, from
+    fail_prev msg
     = op
 ]
 

@@ -7,7 +7,8 @@ fn load_match_target [int unused] str [
         next_tok 0
         str typ = local_type name
         if [str.eq typ, ''] [
-            fail 'unknown match target'
+            str msg = str.concat 'unknown match target: ', name
+            fail_prev msg
             g_expr_type = 'int'
             = '0'
         ]
@@ -57,6 +58,13 @@ fn emit_match_return [str ret] int [
             emit_inst cs
         ]
         else [
+            if [str.eq target_type, 'str' or str.eq pat_type, 'str'] [
+                str pmsg = 'match pattern type mismatch: target '
+                pmsg = str.concat pmsg, target_type
+                pmsg = str.concat pmsg, ', pattern '
+                pmsg = str.concat pmsg, pat_type
+                fail_prev pmsg
+            ]
             str left = intify target, target_type
             str right = intify pat, pat_type
             cond = new_reg 0
@@ -73,7 +81,7 @@ fn emit_match_return [str ret] int [
         skip_nl 0
         str value = parse_expr 0
         str value_type = g_expr_type
-        value = cast_value value, value_type, ret
+        value = checked_cast value, value_type, ret
         skip_nl 0
         expect_kind 'rb'
         emit_return ret, value
@@ -86,7 +94,7 @@ fn emit_match_return [str ret] int [
     skip_nl 0
     str fallback = parse_expr 0
     str fallback_type = g_expr_type
-    fallback = cast_value fallback, fallback_type, ret
+    fallback = checked_cast fallback, fallback_type, ret
     skip_nl 0
     expect_kind 'rb'
     emit_return ret, fallback
@@ -109,7 +117,8 @@ fn append_print_value [str acc, str value] str [
 fn print_value_for_name [str name] str [
     str typ = local_type name
     if [str.eq typ, ''] [
-        fail 'unknown io.print interpolation name'
+        str msg = str.concat 'unknown io.print interpolation name: ', name
+        fail_prev msg
         = string_const ''
     ]
     str addr = local_addr name
@@ -130,7 +139,7 @@ fn print_value_for_name [str name] str [
         emit_inst call
         = out
     ]
-    fail 'unsupported io.print interpolation type'
+    fail_prev 'unsupported io.print interpolation type'
     = string_const ''
 ]
 
@@ -158,7 +167,7 @@ fn emit_print_stmt [int unused] int [
             i = i add 1
             int start = i
             while [i lt n and str.at text, i ne 93] [ i = i add 1 ]
-            if [i ge n] [ = fail 'unterminated io.print interpolation' ]
+            if [i ge n] [ = fail_prev 'unterminated io.print interpolation' ]
             str name = str.slice text, start, i
             str value = print_value_for_name name
             out = append_print_value out, value
