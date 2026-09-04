@@ -1,4 +1,6 @@
 fn parse_block_ir [int unused] int [
+    str block_locals = g_locals
+    str block_addrs = g_local_addrs
     expect_kind 'lb'
     skip_nl 0
     while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
@@ -6,6 +8,8 @@ fn parse_block_ir [int unused] int [
         skip_nl 0
     ]
     if [g_fatal_error eq 0] [ expect_kind 'rb' ]
+    g_locals = block_locals
+    g_local_addrs = block_addrs
     = 0
 ]
 
@@ -238,4 +242,3 @@ fn scan_top [str source] int [
     if [g_fatal_error eq 0] [ validate_struct_layouts 0 ]
     = 0
 ]
-
