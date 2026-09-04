@@ -1,0 +1,7 @@
+struct Wrapper [
+    Missing value
+]
+
+fn main [] int [
+    = 0
+]

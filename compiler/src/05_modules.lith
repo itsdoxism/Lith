@@ -1,0 +1,194 @@
+str g_module_seen = ''
+str g_module_stack = ''
+int g_module_error = 0
+str g_module_error_message = ''
+
+fn module_fail [str msg] int [
+    if [g_module_error eq 0] [ g_module_error_message = msg ]
+    g_module_error = 1
+    = 0
+]
+
+fn module_key [str path] str [
+    # map_put uses '=' and newlines as separators. Encode filesystem paths so
+    # arbitrary path punctuation cannot corrupt cycle/dedup state.
+    str key = ''
+    int n = str.len path
+    int i = 0
+    while [i lt n] [
+        key = str.concat key, int.str str.at path, i
+        key = str.concat key, '_'
+        i = i add 1
+    ]
+    = key
+]
+
+fn path_pop [str path] str [
+    int n = str.len path
+    if [n eq 0] [ = '' ]
+    int i = n sub 1
+    while [i ge 0 and str.at path, i ne 47] [ i = i sub 1 ]
+    if [i lt 0] [ = '' ]
+    if [i eq 0] [ = '/' ]
+    = str.slice path, 0, i
+]
+
+fn path_last_is_parent [str path] int [
+    if [str.eq path, '..'] [ = 1 ]
+    int n = str.len path
+    if [n lt 3] [ = 0 ]
+    int a = n sub 3
+    int b = n sub 2
+    int c = n sub 1
+    if [str.at path, a eq 47 and str.at path, b eq 46 and str.at path, c eq 46] [ = 1 ]
+    = 0
+]
+
+fn path_append_part [str path, str part] str [
+    if [str.eq path, ''] [ = part ]
+    if [str.eq path, '/'] [ = str.concat path, part ]
+    str out = str.concat path, '/'
+    = str.concat out, part
+]
+
+fn path_normalize [str path] str [
+    int n = str.len path
+    int absolute = 0
+    if [n gt 0 and str.at path, 0 eq 47] [ absolute = 1 ]
+    str out = ''
+    if [absolute] [ out = '/' ]
+
+    int i = 0
+    while [i lt n] [
+        while [i lt n and str.at path, i eq 47] [ i = i add 1 ]
+        if [i ge n] [ break ]
+        int start = i
+        while [i lt n and str.at path, i ne 47] [ i = i add 1 ]
+        str part = str.slice path, start, i
+        if [str.eq part, '' or str.eq part, '.'] [ continue ]
+        if [str.eq part, '..'] [
+            if [absolute] [
+                if [not str.eq out, '/'] [ out = path_pop out ]
+            ]
+            else [
+                if [str.eq out, '' or path_last_is_parent out] [
+                    out = path_append_part out, '..'
+                ]
+                else [ out = path_pop out ]
+            ]
+            continue
+        ]
+        out = path_append_part out, part
+    ]
+
+    if [str.eq out, ''] [ = '.' ]
+    = out
+]
+
+fn path_dirname [str path] str [
+    str clean = path_normalize path
+    int n = str.len clean
+    int i = n sub 1
+    while [i ge 0 and str.at clean, i ne 47] [ i = i sub 1 ]
+    if [i lt 0] [ = '.' ]
+    if [i eq 0] [ = '/' ]
+    = str.slice clean, 0, i
+]
+
+fn resolve_import_path [str importer, str spec] str [
+    int n = str.len spec
+    if [n gt 0 and str.at spec, 0 eq 47] [ = path_normalize spec ]
+    str base = path_dirname importer
+    str joined = str.concat base, '/'
+    joined = str.concat joined, spec
+    = path_normalize joined
+]
+
+fn source_import_path [str line] str [
+    str clean = str.trim line
+    if [not str.starts clean, 'use '] [ = '' ]
+    int n = str.len clean
+    if [n lt 6] [ = '' ]
+    if [str.at clean, 4 ne 39] [ = '' ]
+    int i = 5
+    while [i lt n and str.at clean, i ne 39] [ i = i add 1 ]
+    if [i ge n] [ = '' ]
+    = str.slice clean, 5, i
+]
+
+fn module_marker [str path] str [
+    str out = '#@module '
+    out = str.concat out, path
+    = str.concat out, str.chr 10
+]
+
+fn load_module [str path] str [
+    str canonical = path_normalize path
+    str key = module_key canonical
+    str active = map_get g_module_stack, key
+    if [not str.eq active, ''] [
+        str msg = 'module import cycle: '
+        msg = str.concat msg, canonical
+        module_fail msg
+        = ''
+    ]
+    str seen = map_get g_module_seen, key
+    if [not str.eq seen, ''] [ = '' ]
+
+    str source = io.read_text canonical
+    if [not source] [
+        str missing = 'cannot read module: '
+        missing = str.concat missing, canonical
+        module_fail missing
+        = ''
+    ]
+
+    g_module_stack = map_put g_module_stack, key, '1'
+    str dependencies = ''
+    int n = str.len source
+    int start = 0
+    int i = 0
+    while [i le n] [
+        if [i eq n or str.at source, i eq 10] [
+            str line = str.slice source, start, i
+            str spec = source_import_path line
+            if [not str.eq spec, ''] [
+                str child = resolve_import_path canonical, spec
+                str child_source = load_module child
+                if [not str.eq child_source, ''] [
+                    dependencies = str.concat dependencies, child_source
+                    int dep_n = str.len dependencies
+                    if [dep_n gt 0] [
+                        int dep_last = dep_n sub 1
+                        if [str.at dependencies, dep_last ne 10] [
+                            dependencies = str.concat dependencies, str.chr 10
+                        ]
+                    ]
+                ]
+            ]
+            start = i add 1
+        ]
+        i = i add 1
+    ]
+
+    g_module_stack = map_put g_module_stack, key, ''
+    if [g_module_error] [ = '' ]
+    g_module_seen = map_put g_module_seen, key, '1'
+    str out = dependencies
+    out = str.concat out, module_marker canonical
+    out = str.concat out, source
+    int out_n = str.len out
+    if [out_n gt 0] [
+        int out_last = out_n sub 1
+        if [str.at out, out_last ne 10] [ out = str.concat out, str.chr 10 ]
+    ]
+    = out
+]
+
+fn load_program [str entry] str [
+    g_module_seen = ''
+    g_module_stack = ''
+    g_module_error = 0
+    g_module_error_message = ''
+    = load_module entry
+]

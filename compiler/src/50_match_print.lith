@@ -1,7 +1,26 @@
 fn load_match_target [int unused] str [
-    if [str.eq g_kind, 'int' or str.eq g_kind, 'str'] [
+    # Complex targets are grouped so the following '[' remains the match body
+    # delimiter instead of being mistaken for array indexing.
+    if [str.eq g_kind, 'lb'] [
+        next_tok 0
+        str grouped = parse_expr 0
+        str grouped_type = g_expr_type
+        str grouped_addr = g_expr_addr
+        expect_kind 'rb'
+        g_expr_type = grouped_type
+        g_expr_addr = grouped_addr
+        = grouped
+    ]
+
+    if [str.eq g_kind, 'int' or str.eq g_kind, 'float' or str.eq g_kind, 'str'] [
         = parse_primary 0
     ]
+    if [str.eq g_kind, 'id' and str.eq g_text, 'true'] [ = parse_primary 0 ]
+    if [str.eq g_kind, 'id' and str.eq g_text, 'false'] [ = parse_primary 0 ]
+    if [str.eq g_kind, 'id' and str.eq g_text, 'null'] [ = parse_primary 0 ]
+
+    # Preserve the compact `match name [...]` spelling for a simple local or
+    # global. More complex expressions use the grouped form above.
     if [str.eq g_kind, 'id'] [
         str name = g_text
         next_tok 0
@@ -10,9 +29,15 @@ fn load_match_target [int unused] str [
             str msg = str.concat 'unknown match target: ', name
             fail_prev msg
             g_expr_type = 'int'
+            g_expr_addr = ''
             = '0'
         ]
         str addr = local_addr name
+        if [str.starts typ, 'arr '] [
+            g_expr_type = typ
+            g_expr_addr = addr
+            = addr
+        ]
         str r = new_reg 0
         str s = str.concat r, ' = load '
         s = str.concat s, storage_type typ
@@ -25,82 +50,8 @@ fn load_match_target [int unused] str [
     ]
     fail 'unsupported match target'
     g_expr_type = 'int'
+    g_expr_addr = ''
     = '0'
-]
-
-fn emit_match_return [str ret] int [
-    expect_id 'match'
-    str target = load_match_target 0
-    str target_type = g_expr_type
-    expect_kind 'lb'
-    skip_nl 0
-
-    while [str.eq g_kind, 'id' and str.eq g_text, 'is'] [
-        next_tok 0
-        str pat = parse_expr 0
-        str pat_type = g_expr_type
-        str case_label = new_label 'match.case'
-        str next_label = new_label 'match.next'
-        str cond = ''
-
-        if [str.eq target_type, 'str' and str.eq pat_type, 'str'] [
-            str eqv = new_reg 0
-            str eqs = str.concat eqv, ' = call i32 @luna_str_eq(ptr '
-            eqs = str.concat eqs, target
-            eqs = str.concat eqs, ', ptr '
-            eqs = str.concat eqs, pat
-            eqs = str.concat eqs, ')'
-            emit_inst eqs
-            cond = new_reg 0
-            str cs = str.concat cond, ' = icmp ne i32 '
-            cs = str.concat cs, eqv
-            cs = str.concat cs, ', 0'
-            emit_inst cs
-        ]
-        else [
-            if [str.eq target_type, 'str' or str.eq pat_type, 'str'] [
-                str pmsg = 'match pattern type mismatch: target '
-                pmsg = str.concat pmsg, target_type
-                pmsg = str.concat pmsg, ', pattern '
-                pmsg = str.concat pmsg, pat_type
-                fail_prev pmsg
-            ]
-            str left = intify target, target_type
-            str right = intify pat, pat_type
-            cond = new_reg 0
-            str cs2 = str.concat cond, ' = icmp eq i32 '
-            cs2 = str.concat cs2, left
-            cs2 = str.concat cs2, ', '
-            cs2 = str.concat cs2, right
-            emit_inst cs2
-        ]
-
-        emit_cbranch cond, case_label, next_label
-        emit_label case_label
-        expect_kind 'lb'
-        skip_nl 0
-        str value = parse_expr 0
-        str value_type = g_expr_type
-        value = checked_cast value, value_type, ret
-        skip_nl 0
-        expect_kind 'rb'
-        emit_return ret, value
-        emit_label next_label
-        skip_nl 0
-    ]
-
-    expect_id 'else'
-    expect_kind 'lb'
-    skip_nl 0
-    str fallback = parse_expr 0
-    str fallback_type = g_expr_type
-    fallback = checked_cast fallback, fallback_type, ret
-    skip_nl 0
-    expect_kind 'rb'
-    emit_return ret, fallback
-    skip_nl 0
-    expect_kind 'rb'
-    = 0
 ]
 
 fn append_print_value [str acc, str value] str [
@@ -187,4 +138,3 @@ fn emit_print_stmt [int unused] int [
     emit_inst ps
     = 0
 ]
-

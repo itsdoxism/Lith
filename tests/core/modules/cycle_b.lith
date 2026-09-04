@@ -1,0 +1,5 @@
+use './cycle_a.lith'
+
+fn cycle_b [] int [
+    = 2
+]

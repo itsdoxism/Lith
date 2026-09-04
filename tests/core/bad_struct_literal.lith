@@ -1,0 +1,9 @@
+struct Pair [
+    int left
+    int right
+]
+
+fn main [] int [
+    Pair value = Pair [1]
+    = 0
+]

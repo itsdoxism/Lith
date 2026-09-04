@@ -1,4 +1,6 @@
 fn parse_block_ir [int unused] int [
+    str block_locals = g_locals
+    str block_addrs = g_local_addrs
     expect_kind 'lb'
     skip_nl 0
     while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
@@ -6,6 +8,8 @@ fn parse_block_ir [int unused] int [
         skip_nl 0
     ]
     if [g_fatal_error eq 0] [ expect_kind 'rb' ]
+    g_locals = block_locals
+    g_local_addrs = block_addrs
     = 0
 ]
 
@@ -20,21 +24,101 @@ fn skip_block [int unused] int [
     = 0
 ]
 
+fn prescan_struct_names [str source] int [
+    reset source
+    int depth = 0
+    while [not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
+        if [depth eq 0 and str.eq g_kind, 'id' and str.eq g_text, 'struct'] [
+            next_tok 0
+            if [not str.eq g_kind, 'id'] [
+                fatal 'struct expects a name'
+                = 0
+            ]
+            str name = g_text
+            str existing = map_get g_struct_counts, name
+            if [str.eq existing, ''] [
+                g_struct_counts = map_put g_struct_counts, name, '0'
+                str key = int.str g_struct_name_count
+                g_struct_names = map_put g_struct_names, key, name
+                g_struct_name_count = g_struct_name_count add 1
+            ]
+            next_tok 0
+            continue
+        ]
+        if [str.eq g_kind, 'lb'] [ depth = depth add 1 ]
+        else [
+            if [str.eq g_kind, 'rb' and depth gt 0] [ depth = depth sub 1 ]
+        ]
+        next_tok 0
+    ]
+    = 0
+]
+
+fn type_contains_struct_by_value [str typ, str target, str trail] int [
+    if [str.starts typ, 'ptr '] [ = 0 ]
+    if [str.starts typ, 'arr '] [
+        str elem = array_elem_type typ
+        = type_contains_struct_by_value elem, target, trail
+    ]
+    if [str.eq typ, target] [ = 1 ]
+    if [not is_struct_type typ] [ = 0 ]
+    str visited = map_get trail, typ
+    if [not str.eq visited, ''] [ = 0 ]
+    str next_trail = map_put trail, typ, '1'
+    int i = 0
+    str field = struct_field_name typ, i
+    while [not str.eq field, ''] [
+        str field_type = struct_field_type typ, field
+        if [type_contains_struct_by_value field_type, target, next_trail] [ = 1 ]
+        i = i add 1
+        field = struct_field_name typ, i
+    ]
+    = 0
+]
+
+fn validate_struct_layouts [int unused] int [
+    int i = 0
+    while [i lt g_struct_name_count] [
+        str key = int.str i
+        str name = map_get g_struct_names, key
+        int field_index = 0
+        str field = struct_field_name name, field_index
+        while [not str.eq field, ''] [
+            str field_type = struct_field_type name, field
+            if [type_contains_struct_by_value field_type, name, ''] [
+                str msg = 'infinite by-value struct layout involving '
+                msg = str.concat msg, name
+                fail_prev msg
+                = 0
+            ]
+            field_index = field_index add 1
+            field = struct_field_name name, field_index
+        ]
+        i = i add 1
+    ]
+    = 0
+]
+
 fn scan_struct [int unused] int [
     expect_id 'struct'
     str name = g_text
-    str existing_struct = map_get g_struct_counts, name
-    if [not str.eq existing_struct, ''] [
+    str already_defined = map_get g_struct_defined, name
+    if [not str.eq already_defined, ''] [
         str smsg = str.concat 'duplicate struct: ', name
         fail smsg
     ]
+    g_struct_defined = map_put g_struct_defined, name, '1'
     next_tok 0
     expect_kind 'lb'
     skip_nl 0
     int index = 0
     while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
         str typ = parse_type 0
-        if [str.eq typ, 'arr'] [ fail 'array struct fields are not supported yet' ]
+        if [str.eq typ, 'arr'] [ fail 'array struct fields require an explicit element type and length' ]
+        if [not str.eq g_kind, 'id'] [
+            fatal 'struct field expects a name'
+            = 0
+        ]
         str field = g_text
         str key = struct_key name, field
         str existing_field = map_get g_struct_types, key
@@ -45,6 +129,8 @@ fn scan_struct [int unused] int [
         next_tok 0
         g_struct_indices = map_put g_struct_indices, key, int.str index
         g_struct_types = map_put g_struct_types, key, typ
+        str ikey = struct_index_key name, index
+        g_struct_field_names = map_put g_struct_field_names, ikey, field
         index = index add 1
         skip_nl 0
     ]
@@ -67,7 +153,11 @@ fn scan_function [int unused] int [
     str param_names = ''
     while [not str.eq g_kind, 'rb' and g_fatal_error eq 0] [
         str typ = parse_type 0
-        if [str.eq typ, 'arr'] [ fail 'array parameters are not supported yet' ]
+        if [str.eq typ, 'arr'] [ fail 'array parameters require an explicit element type and length' ]
+        if [not str.eq g_kind, 'id'] [
+            fatal 'function parameter expects a name'
+            = 0
+        ]
         str pname = g_text
         str seen_param = map_get param_names, pname
         if [not str.eq seen_param, ''] [
@@ -86,9 +176,8 @@ fn scan_function [int unused] int [
     expect_kind 'rb'
     str ret = 'int'
     if [str.eq g_kind, 'id'] [
-        ret = g_text
-        if [str.eq ret, 'arr'] [ fail 'array return types are not supported yet' ]
-        next_tok 0
+        ret = parse_type 0
+        if [str.eq ret, 'arr'] [ fail 'array return types require an explicit element type and length' ]
     ]
     g_fn_ret = map_put g_fn_ret, name, ret
     g_fn_argc = map_put g_fn_argc, name, int.str argc
@@ -98,13 +187,17 @@ fn scan_function [int unused] int [
 
 fn scan_global [int unused] int [
     str typ = parse_type 0
+    if [not str.eq g_kind, 'id'] [
+        fatal 'global declaration expects a name'
+        = 0
+    ]
     str name = g_text
     str existing_global = map_get g_globals, name
     if [not str.eq existing_global, ''] [
         str dmsg = str.concat 'duplicate global: ', name
         fail dmsg
     ]
-    if [str.eq typ, 'arr'] [ fail 'global arrays are not supported yet' ]
+    if [str.eq typ, 'arr'] [ fail 'global arrays require an explicit element type and length' ]
     next_tok 0
     expect_kind 'assign'
     g_globals = map_put g_globals, name, typ
@@ -120,6 +213,13 @@ fn scan_top [str source] int [
     g_struct_counts = ''
     g_struct_indices = ''
     g_struct_types = ''
+    g_struct_field_names = ''
+    g_struct_defined = ''
+    g_struct_names = ''
+    g_struct_name_count = 0
+
+    prescan_struct_names source
+    if [g_fatal_error] [ = 0 ]
     reset source
     skip_nl 0
     while [not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
@@ -132,13 +232,13 @@ fn scan_top [str source] int [
             else [
                 if [str.eq g_kind, 'id' and str.eq g_text, 'fn'] [ scan_function 0 ]
                 else [
-                    if [str.eq g_kind, 'id' and is_decl_type g_text] [ scan_global 0 ]
+                    if [str.eq g_kind, 'id' and is_type_start g_text] [ scan_global 0 ]
                     else [ = fatal 'unsupported top level item' ]
                 ]
             ]
         ]
         skip_nl 0
     ]
+    if [g_fatal_error eq 0] [ validate_struct_layouts 0 ]
     = 0
 ]
-

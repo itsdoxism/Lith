@@ -1,0 +1,6 @@
+fn main [] int [
+    ptr int values = sys.alloc 1
+    ptr char bytes = values
+    sys.free values
+    = 0
+]

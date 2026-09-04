@@ -1,0 +1,4 @@
+fn broken [] int [
+    int value = 'wrong'
+    = value
+]

@@ -1,0 +1,136 @@
+fn parse_global_constant [str typ] str [
+    if [str.starts typ, 'arr '] [
+        str elem_type = array_elem_type typ
+        str expected_count = array_count_text typ
+        expect_kind 'lb'
+        str values = ''
+        int index = 0
+        while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
+            str value = parse_global_constant elem_type
+            if [index gt 0] [ values = str.concat values, ', ' ]
+            values = str.concat values, storage_type elem_type
+            values = str.concat values, ' '
+            values = str.concat values, value
+            index = index add 1
+            if [str.eq g_kind, 'comma'] [ next_tok 0 ]
+            else [ break ]
+        ]
+        expect_kind 'rb'
+        str actual_count = int.str index
+        if [not str.eq actual_count, expected_count] [
+            fail_prev 'global array literal length does not match its fixed array type'
+        ]
+        str out = str.concat '[ ', values
+        = str.concat out, ' ]'
+    ]
+
+    if [is_struct_type typ] [
+        if [not str.eq g_kind, 'id' or not str.eq g_text, typ] [
+            str smsg = str.concat 'global struct initializer must begin with ', typ
+            fail smsg
+            = 'zeroinitializer'
+        ]
+        next_tok 0
+        expect_kind 'lb'
+        str values2 = ''
+        int index2 = 0
+        str field = struct_field_name typ, index2
+        while [not str.eq field, '' and not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
+            str field_type = struct_field_type typ, field
+            str field_value = parse_global_constant field_type
+            if [index2 gt 0] [ values2 = str.concat values2, ', ' ]
+            values2 = str.concat values2, storage_type field_type
+            values2 = str.concat values2, ' '
+            values2 = str.concat values2, field_value
+            index2 = index2 add 1
+            if [str.eq g_kind, 'comma'] [ next_tok 0 ]
+            else [ break ]
+            field = struct_field_name typ, index2
+        ]
+        if [str.eq field, '' and not str.eq g_kind, 'rb'] [
+            fail 'too many values in global struct literal'
+            while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [ next_tok 0 ]
+        ]
+        expect_kind 'rb'
+        str missing = struct_field_name typ, index2
+        if [not str.eq missing, ''] [ fail_prev 'not enough values in global struct literal' ]
+        str out2 = str.concat '{ ', values2
+        = str.concat out2, ' }'
+    ]
+
+    if [str.eq typ, 'str'] [
+        if [str.eq g_kind, 'id' and str.eq g_text, 'null'] [
+            next_tok 0
+            = 'null'
+        ]
+        if [not str.eq g_kind, 'str'] [
+            fail 'global str initializer must be a string literal or null'
+            next_tok 0
+            = 'null'
+        ]
+        str s = string_const g_text
+        next_tok 0
+        = s
+    ]
+
+    if [str.starts typ, 'ptr '] [
+        if [str.eq g_kind, 'id' and str.eq g_text, 'null'] [
+            next_tok 0
+            = 'null'
+        ]
+        fail 'global pointer initializer currently requires null'
+        next_tok 0
+        = 'null'
+    ]
+
+    if [str.eq typ, 'bool'] [
+        if [str.eq g_kind, 'id' and str.eq g_text, 'true'] [
+            next_tok 0
+            = '1'
+        ]
+        if [str.eq g_kind, 'id' and str.eq g_text, 'false'] [
+            next_tok 0
+            = '0'
+        ]
+        if [str.eq g_kind, 'int'] [
+            str iv = g_text
+            next_tok 0
+            if [str.eq iv, '0'] [ = '0' ]
+            = '1'
+        ]
+        fail 'global bool initializer must be true, false, or an integer literal'
+        next_tok 0
+        = '0'
+    ]
+
+    if [str.eq typ, 'float'] [
+        if [str.eq g_kind, 'float'] [
+            str fv = g_text
+            next_tok 0
+            = fv
+        ]
+        if [str.eq g_kind, 'int'] [
+            str iv2 = g_text
+            next_tok 0
+            = str.concat iv2, '.0'
+        ]
+        fail 'global float initializer must be numeric'
+        next_tok 0
+        = '0.0'
+    ]
+
+    if [str.eq typ, 'int' or str.eq typ, 'char'] [
+        if [not str.eq g_kind, 'int'] [
+            fail 'global integer initializer must be an integer literal'
+            next_tok 0
+            = '0'
+        ]
+        str iv3 = g_text
+        next_tok 0
+        = iv3
+    ]
+
+    fail 'unsupported global initializer type'
+    next_tok 0
+    = default_value typ
+]

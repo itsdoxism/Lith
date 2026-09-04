@@ -1,0 +1,6 @@
+fn main [] int [
+    ptr int left = null
+    ptr char right = null
+    bool same = left eq right
+    = 0
+]
