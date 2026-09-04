@@ -10,6 +10,7 @@ RUNTIME_H := runtime/luna_runtime.h
 LLVM_RUNTIME := runtime/luna_runtime.ll
 SELF_MODULES := \
 	compiler/src/00_state_types.lith \
+	compiler/src/05_modules.lith \
 	compiler/src/10_lexer.lith \
 	compiler/src/20_symbols_ir.lith \
 	compiler/src/30_operators.lith \
