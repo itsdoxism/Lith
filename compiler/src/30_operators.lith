@@ -263,8 +263,8 @@ fn explicit_cast [str op, str from, str to, int line, int start, int finish] str
     = op
 ]
 
-fn emit_numeric_compare [str op, str left, str lt, str right, str rt] str [
-    if [is_integer_like lt and is_integer_like rt] [
+fn emit_numeric_compare [str op, str left, str left_type, str right, str right_type] str [
+    if [is_integer_like left_type and is_integer_like right_type] [
         str pred = 'sgt'
         if [str.eq op, 'lt'] [ pred = 'slt' ]
         if [str.eq op, 'ge'] [ pred = 'sge' ]
@@ -281,9 +281,9 @@ fn emit_numeric_compare [str op, str left, str lt, str right, str rt] str [
     ]
     str a = left
     str b = right
-    if [str.eq lt, 'float' and is_integer_like rt] [ b = floatify right, rt ]
+    if [str.eq left_type, 'float' and is_integer_like right_type] [ b = floatify right, right_type ]
     else [
-        if [is_integer_like lt and str.eq rt, 'float'] [ a = floatify left, lt ]
+        if [is_integer_like left_type and str.eq right_type, 'float'] [ a = floatify left, left_type ]
     ]
     str fpred = 'ogt'
     if [str.eq op, 'lt'] [ fpred = 'olt' ]
@@ -300,8 +300,8 @@ fn emit_numeric_compare [str op, str left, str lt, str right, str rt] str [
     = fr
 ]
 
-fn emit_numeric_arithmetic [str op, str left, str lt, str right, str rt] str [
-    if [is_integer_like lt and is_integer_like rt] [
+fn emit_numeric_arithmetic [str op, str left, str left_type, str right, str right_type] str [
+    if [is_integer_like left_type and is_integer_like right_type] [
         str inst = 'add'
         if [str.eq op, 'sub'] [ inst = 'sub' ]
         if [str.eq op, 'mul'] [ inst = 'mul' ]
@@ -320,8 +320,8 @@ fn emit_numeric_arithmetic [str op, str left, str lt, str right, str rt] str [
     ]
     str a = left
     str b = right
-    if [is_integer_like lt] [ a = floatify left, lt ]
-    if [is_integer_like rt] [ b = floatify right, rt ]
+    if [is_integer_like left_type] [ a = floatify left, left_type ]
+    if [is_integer_like right_type] [ b = floatify right, right_type ]
     str finst = 'fadd'
     if [str.eq op, 'sub'] [ finst = 'fsub' ]
     if [str.eq op, 'mul'] [ finst = 'fmul' ]
@@ -339,24 +339,24 @@ fn emit_numeric_arithmetic [str op, str left, str lt, str right, str rt] str [
     = fr
 ]
 
-fn numeric_pair [str lt, str rt] int [
-    if [is_integer_like lt and is_integer_like rt] [ = 1 ]
-    if [str.eq lt, 'float' and str.eq rt, 'float'] [ = 1 ]
-    if [str.eq lt, 'float' and is_integer_like rt] [ = 1 ]
-    if [is_integer_like lt and str.eq rt, 'float'] [ = 1 ]
+fn numeric_pair [str left_type, str right_type] int [
+    if [is_integer_like left_type and is_integer_like right_type] [ = 1 ]
+    if [str.eq left_type, 'float' and str.eq right_type, 'float'] [ = 1 ]
+    if [str.eq left_type, 'float' and is_integer_like right_type] [ = 1 ]
+    if [is_integer_like left_type and str.eq right_type, 'float'] [ = 1 ]
     = 0
 ]
 
-fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op_start, int op_end] str [
+fn emit_binary [str op, str left, str left_type, str right, str right_type, int op_line, int op_start, int op_end] str [
     if [str.eq op, 'and' or str.eq op, 'or'] [
-        if [not can_boolify lt or not can_boolify rt] [
-            operator_type_error op, lt, rt, op_line, op_start, op_end
+        if [not can_boolify left_type or not can_boolify right_type] [
+            operator_type_error op, left_type, right_type, op_line, op_start, op_end
             g_expr_type = 'bool'
             g_expr_addr = ''
             = '0'
         ]
-        str a = boolify left, lt
-        str b = boolify right, rt
+        str a = boolify left, left_type
+        str b = boolify right, right_type
         str r = new_reg 0
         str inst = 'and'
         if [str.eq op, 'or'] [ inst = 'or' ]
@@ -376,7 +376,7 @@ fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op
         str pred = 'eq'
         if [str.eq op, 'ne'] [ pred = 'ne' ]
 
-        if [str.eq lt, 'str' and str.eq rt, 'str'] [
+        if [str.eq left_type, 'str' and str.eq right_type, 'str'] [
             str eqv = new_reg 0
             str call = str.concat eqv, ' = call i32 @luna_str_eq(ptr '
             call = str.concat call, left
@@ -398,7 +398,13 @@ fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op
             = sr
         ]
 
-        if [is_pointer_like lt and is_pointer_like rt] [
+        if [is_pointer_like left_type and is_pointer_like right_type] [
+            if [not str.eq left_type, right_type and not is_null_pointer_type left_type and not is_null_pointer_type right_type] [
+                operator_type_error op, left_type, right_type, op_line, op_start, op_end
+                g_expr_type = 'bool'
+                g_expr_addr = ''
+                = '0'
+            ]
             str pr = new_reg 0
             str ps = str.concat pr, ' = icmp '
             ps = str.concat ps, pred
@@ -412,7 +418,7 @@ fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op
             = pr
         ]
 
-        if [str.eq lt, 'bool' and str.eq rt, 'bool'] [
+        if [str.eq left_type, 'bool' and str.eq right_type, 'bool'] [
             str br = new_reg 0
             str bs = str.concat br, ' = icmp '
             bs = str.concat bs, pred
@@ -426,7 +432,7 @@ fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op
             = br
         ]
 
-        if [is_integer_like lt and is_integer_like rt] [
+        if [is_integer_like left_type and is_integer_like right_type] [
             str ir = new_reg 0
             str is = str.concat ir, ' = icmp '
             is = str.concat is, pred
@@ -440,11 +446,11 @@ fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op
             = ir
         ]
 
-        if [numeric_pair lt, rt] [
+        if [numeric_pair left_type, right_type] [
             str fa = left
             str fb = right
-            if [is_integer_like lt] [ fa = floatify left, lt ]
-            if [is_integer_like rt] [ fb = floatify right, rt ]
+            if [is_integer_like left_type] [ fa = floatify left, left_type ]
+            if [is_integer_like right_type] [ fb = floatify right, right_type ]
             str fpred = 'oeq'
             if [str.eq op, 'ne'] [ fpred = 'une' ]
             str fr = new_reg 0
@@ -460,38 +466,38 @@ fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op
             = fr
         ]
 
-        operator_type_error op, lt, rt, op_line, op_start, op_end
+        operator_type_error op, left_type, right_type, op_line, op_start, op_end
         g_expr_type = 'bool'
         g_expr_addr = ''
         = '0'
     ]
 
     if [str.eq op, 'gt' or str.eq op, 'lt' or str.eq op, 'ge' or str.eq op, 'le'] [
-        if [numeric_pair lt, rt] [
-            str cmp = emit_numeric_compare op, left, lt, right, rt
+        if [numeric_pair left_type, right_type] [
+            str cmp = emit_numeric_compare op, left, left_type, right, right_type
             g_expr_type = 'bool'
             g_expr_addr = ''
             = cmp
         ]
-        operator_type_error op, lt, rt, op_line, op_start, op_end
+        operator_type_error op, left_type, right_type, op_line, op_start, op_end
         g_expr_type = 'bool'
         g_expr_addr = ''
         = '0'
     ]
 
     if [str.eq op, 'add' or str.eq op, 'sub' or str.eq op, 'mul' or str.eq op, 'div' or str.eq op, 'mod'] [
-        if [numeric_pair lt, rt] [
-            str out = emit_numeric_arithmetic op, left, lt, right, rt
+        if [numeric_pair left_type, right_type] [
+            str out = emit_numeric_arithmetic op, left, left_type, right, right_type
             g_expr_addr = ''
             = out
         ]
-        operator_type_error op, lt, rt, op_line, op_start, op_end
+        operator_type_error op, left_type, right_type, op_line, op_start, op_end
         g_expr_type = 'int'
         g_expr_addr = ''
         = '0'
     ]
 
-    operator_type_error op, lt, rt, op_line, op_start, op_end
+    operator_type_error op, left_type, right_type, op_line, op_start, op_end
     g_expr_type = 'int'
     g_expr_addr = ''
     = '0'
