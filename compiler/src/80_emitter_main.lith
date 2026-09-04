@@ -131,8 +131,8 @@ fn compile_llvm [str source] str [
     g_error_count = 0
     g_fatal_error = 0
     g_error_message = ''
-    g_out = ''
-    g_strings = ''
+    g_out = str.slice '', 0, 0
+    g_strings = str.slice '', 0, 0
     g_string_id = 0
     scan_top source
     if [g_fatal_error] [ = '' ]
