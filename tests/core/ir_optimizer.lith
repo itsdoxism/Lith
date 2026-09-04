@@ -1,0 +1,9 @@
+fn main [] int [
+    int folded = 2 add 3
+    if [1 eq 1] [
+        = folded
+    ]
+    else [
+        = 0
+    ]
+]
