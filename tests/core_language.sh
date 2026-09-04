@@ -66,6 +66,10 @@ check_compile_error \
     bad-struct-literal \
     'not enough values in struct literal'
 check_compile_error \
+    "$ROOT/tests/core/bad_unknown_type.lith" \
+    bad-unknown-type \
+    'unknown type: Missing'
+check_compile_error \
     "$ROOT/tests/core/modules/cycle_a.lith" \
     module-cycle \
     'module import cycle:'
