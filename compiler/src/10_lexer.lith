@@ -55,9 +55,15 @@ fn make_diagnostic [str msg, int line, int start, int finish] str [
 ]
 
 fn fail_at [str msg, int line, int start, int finish] int [
-    if [g_error eq 0] [
-        g_error_message = make_diagnostic msg, line, start, finish
+    if [g_error_count lt 20] [
+        str diagnostic = make_diagnostic msg, line, start, finish
+        if [not str.eq g_error_message, ''] [
+            g_error_message = str.concat g_error_message, str.chr 10
+            g_error_message = str.concat g_error_message, str.chr 10
+        ]
+        g_error_message = str.concat g_error_message, diagnostic
     ]
+    g_error_count = g_error_count add 1
     g_error = 1
     = 0
 ]
@@ -68,6 +74,20 @@ fn fail [str msg] int [
 
 fn fail_prev [str msg] int [
     = fail_at msg, g_prev_line, g_prev_start, g_prev_end
+]
+
+fn fatal_at [str msg, int line, int start, int finish] int [
+    fail_at msg, line, start, finish
+    g_fatal_error = 1
+    = 0
+]
+
+fn fatal [str msg] int [
+    = fatal_at msg, g_tok_line, g_tok_start, g_tok_end
+]
+
+fn fatal_prev [str msg] int [
+    = fatal_at msg, g_prev_line, g_prev_start, g_prev_end
 ]
 
 fn is_alpha [int c] int [
@@ -124,7 +144,7 @@ fn next_tok [int unused] int [
                     g_pos = g_pos add 1
                     if [g_pos ge n] [
                         g_tok_end = g_pos
-                        = fail 'unterminated escape'
+                        = fatal 'unterminated escape'
                     ]
                     int e = str.at g_src, g_pos
                     if [e eq 110] [ s = append_char s, 10 ]
@@ -142,7 +162,7 @@ fn next_tok [int unused] int [
                 g_pos = g_pos add 1
             ]
             g_tok_end = g_pos
-            = fail 'unterminated string'
+            = fatal 'unterminated string'
         ]
         if [is_alpha c] [
             int start = g_pos
@@ -182,7 +202,7 @@ fn next_tok [int unused] int [
         if [c eq 44] [ g_kind = 'comma' g_text = ',' = 0 ]
         if [c eq 61] [ g_kind = 'assign' g_text = '=' = 0 ]
         if [c eq 46] [ g_kind = 'dot' g_text = '.' = 0 ]
-        = fail 'unexpected character'
+        = fatal 'unexpected character'
     ]
     g_tok_start = g_pos
     g_tok_end = g_pos
@@ -213,14 +233,26 @@ fn skip_nl [int unused] int [
 ]
 
 fn expect_kind [str kind] int [
-    if [not str.eq g_kind, kind] [ = fail 'unexpected token kind' ]
+    if [not str.eq g_kind, kind] [
+        fatal 'unexpected token kind'
+        next_tok 0
+        = 0
+    ]
     next_tok 0
     = 1
 ]
 
 fn expect_id [str text] int [
-    if [not str.eq g_kind, 'id'] [ = fail 'expected identifier' ]
-    if [not str.eq g_text, text] [ = fail 'unexpected identifier' ]
+    if [not str.eq g_kind, 'id'] [
+        fatal 'expected identifier'
+        next_tok 0
+        = 0
+    ]
+    if [not str.eq g_text, text] [
+        fatal 'unexpected identifier'
+        next_tok 0
+        = 0
+    ]
     next_tok 0
     = 1
 ]

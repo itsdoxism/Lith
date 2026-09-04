@@ -6,7 +6,7 @@ fn emit_struct_ir [int unused] int [
     skip_nl 0
     str fields = ''
     int first = 1
-    while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
+    while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
         str typ = parse_type 0
         next_tok 0
         if [first eq 0] [ fields = str.concat fields, ', ' ]
@@ -14,7 +14,7 @@ fn emit_struct_ir [int unused] int [
         first = 0
         skip_nl 0
     ]
-    expect_kind 'rb'
+    if [g_fatal_error eq 0] [ expect_kind 'rb' ]
     str s = str.concat '%struct.', name
     s = str.concat s, ' = type { '
     s = str.concat s, fields
@@ -53,15 +53,10 @@ fn emit_function_ir [int unused] int [
     g_local_addrs = ''
     g_temp = 0
     int first = 1
-    while [not str.eq g_kind, 'rb'] [
+    while [not str.eq g_kind, 'rb' and g_fatal_error eq 0] [
         str typ = parse_type 0
         str pname = g_text
         next_tok 0
-        str existing = map_get g_locals, pname
-        if [not str.eq existing, ''] [
-            str pmsg = str.concat 'duplicate parameter: ', pname
-            fail_prev pmsg
-        ]
         g_locals = map_put g_locals, pname, typ
         str paddr = new_reg 0
         g_local_addrs = map_put g_local_addrs, pname, paddr
@@ -85,6 +80,7 @@ fn emit_function_ir [int unused] int [
         if [str.eq g_kind, 'comma'] [ next_tok 0 ]
         else [ break ]
     ]
+    if [g_fatal_error] [ = 0 ]
     expect_kind 'rb'
     str ret = 'int'
     if [str.eq g_kind, 'id'] [
@@ -106,6 +102,7 @@ fn emit_function_ir [int unused] int [
     emit_label 'entry'
     g_out = str.concat g_out, prologue
     parse_block_ir 0
+    if [g_fatal_error] [ = 0 ]
     if [g_terminated eq 0] [ emit_return ret, default_value ret ]
     emit_line '}'
     emit_line ''
@@ -136,16 +133,19 @@ fn emit_header [int unused] int [
 
 fn compile_llvm [str source] str [
     g_error = 0
+    g_error_count = 0
+    g_fatal_error = 0
     g_error_message = ''
     g_out = ''
     g_strings = ''
     g_string_id = 0
     scan_top source
-    if [g_error] [ = '' ]
+    if [g_fatal_error] [ = '' ]
+
     emit_header 0
     reset source
     skip_nl 0
-    while [not str.eq g_kind, 'eof'] [
+    while [not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
         if [str.eq g_kind, 'id' and str.eq g_text, 'use'] [
             next_tok 0
             next_tok 0
@@ -157,15 +157,16 @@ fn compile_llvm [str source] str [
                 else [
                     if [str.eq g_kind, 'id' and is_decl_type g_text] [ emit_global_ir 0 ]
                     else [
-                        fail 'unsupported top level item'
+                        fatal 'unsupported top level item'
                         = ''
                     ]
                 ]
             ]
         ]
-        if [g_error] [ = '' ]
         skip_nl 0
     ]
+    if [g_fatal_error] [ = '' ]
+    if [g_error] [ = '' ]
     g_out = str.concat g_out, g_strings
     = g_out
 ]

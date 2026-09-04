@@ -1,0 +1,12 @@
+fn main [] int [
+    float a = 1.5
+    float b = 2.0
+    float total = a add b
+    bool greater = total gt 3.0
+    str left = 'lith'
+    str right = 'lith'
+    bool same = left eq right
+    if [not greater] [ = 1 ]
+    if [not same] [ = 2 ]
+    = 0
+]

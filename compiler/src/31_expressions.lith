@@ -4,12 +4,15 @@ fn parse_expr [int minp] str [
     str la = g_expr_addr
     while [str.eq g_kind, 'id' and precedence g_text ge minp and precedence g_text gt 0] [
         str op = g_text
+        int op_line = g_tok_line
+        int op_start = g_tok_start
+        int op_end = g_tok_end
         int p = precedence op
         next_tok 0
         int nextp = p add 1
         str right = parse_expr nextp
         str rt = g_expr_type
-        left = emit_binary op, left, lt, right, rt
+        left = emit_binary op, left, lt, right, rt, op_line, op_start, op_end
         lt = g_expr_type
         la = ''
     ]
@@ -204,7 +207,7 @@ fn parse_primary [int unused] str [
         while [str.eq g_kind, 'dot'] [
             next_tok 0
             if [not str.eq g_kind, 'id'] [
-                fail 'expected struct field'
+                fatal 'expected struct field'
                 = value
             ]
             str field = g_text
@@ -242,7 +245,7 @@ fn parse_primary [int unused] str [
         g_expr_addr = current_addr
         = value
     ]
-    fail 'expected expression'
+    fatal 'expected expression'
     g_expr_type = 'int'
     g_expr_addr = ''
     = '0'

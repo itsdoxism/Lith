@@ -67,7 +67,6 @@ fn builtin_argc [str name] int [
     if [str.eq name, 'int.str'] [ = 1 ]
     str n = map_get g_fn_argc, name
     if [str.eq n, ''] [ = 0 ]
-    # Function calls in the bootstrap source never need this numeric value for user functions.
     = 0
 ]
 
@@ -99,14 +98,51 @@ fn builtin_param [str name, int index] str [
     = map_get g_fn_params, key
 ]
 
+fn is_integer_like [str typ] int [
+    if [str.eq typ, 'int' or str.eq typ, 'char'] [ = 1 ]
+    = 0
+]
+
+fn is_pointer_like [str typ] int [
+    if [str.eq typ, 'str' or str.starts typ, 'ptr '] [ = 1 ]
+    = 0
+]
+
+fn can_boolify [str typ] int [
+    if [str.eq typ, 'bool' or is_integer_like typ or str.eq typ, 'float' or is_pointer_like typ] [ = 1 ]
+    = 0
+]
+
+fn operator_type_error [str op, str left_type, str right_type, int line, int start, int finish] int [
+    str msg = 'operator '
+    msg = str.concat msg, op
+    msg = str.concat msg, ' does not support '
+    msg = str.concat msg, left_type
+    msg = str.concat msg, ' and '
+    msg = str.concat msg, right_type
+    = fail_at msg, line, start, finish
+]
+
 fn boolify [str op, str typ] str [
     if [str.eq typ, 'bool'] [ = op ]
+    if [not can_boolify typ] [
+        str msg = str.concat 'condition cannot use value of type ', typ
+        fail_prev msg
+        = '0'
+    ]
     str r = new_reg 0
-    if [str.eq typ, 'str' or str.starts typ, 'ptr '] [
+    if [is_pointer_like typ] [
         str s = str.concat r, ' = icmp ne ptr '
         s = str.concat s, op
         s = str.concat s, ', null'
         emit_inst s
+        = r
+    ]
+    if [str.eq typ, 'float'] [
+        str sf = str.concat r, ' = fcmp une double '
+        sf = str.concat sf, op
+        sf = str.concat sf, ', 0.0'
+        emit_inst sf
         = r
     ]
     str s2 = str.concat r, ' = icmp ne i32 '
@@ -132,7 +168,7 @@ fn intify [str op, str typ] str [
 fn can_cast [str from, str to] int [
     if [str.eq from, to] [ = 1 ]
     if [str.eq to, 'bool'] [
-        if [str.eq from, 'int' or str.eq from, 'char' or str.eq from, 'str' or str.starts from, 'ptr '] [ = 1 ]
+        if [can_boolify from] [ = 1 ]
         = 0
     ]
     if [str.eq to, 'int' or str.eq to, 'char'] [
@@ -166,8 +202,14 @@ fn checked_cast [str op, str from, str to] str [
     = op
 ]
 
-fn emit_binary [str op, str left, str lt, str right, str rt] str [
+fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op_start, int op_end] str [
     if [str.eq op, 'and' or str.eq op, 'or'] [
+        if [not can_boolify lt or not can_boolify rt] [
+            operator_type_error op, lt, rt, op_line, op_start, op_end
+            g_expr_type = 'bool'
+            g_expr_addr = ''
+            = '0'
+        ]
         str a = boolify left, lt
         str b = boolify right, rt
         str r = new_reg 0
@@ -184,44 +226,184 @@ fn emit_binary [str op, str left, str lt, str right, str rt] str [
         g_expr_addr = ''
         = r
     ]
-    if [str.eq op, 'eq' or str.eq op, 'ne' or str.eq op, 'gt' or str.eq op, 'lt' or str.eq op, 'ge' or str.eq op, 'le'] [
-        str a = intify left, lt
-        str b = intify right, rt
+
+    if [str.eq op, 'eq' or str.eq op, 'ne'] [
         str pred = 'eq'
         if [str.eq op, 'ne'] [ pred = 'ne' ]
-        if [str.eq op, 'gt'] [ pred = 'sgt' ]
-        if [str.eq op, 'lt'] [ pred = 'slt' ]
-        if [str.eq op, 'ge'] [ pred = 'sge' ]
-        if [str.eq op, 'le'] [ pred = 'sle' ]
-        str r = new_reg 0
-        str s = str.concat r, ' = icmp '
-        s = str.concat s, pred
-        s = str.concat s, ' i32 '
-        s = str.concat s, a
-        s = str.concat s, ', '
-        s = str.concat s, b
-        emit_inst s
+
+        if [str.eq lt, 'str' and str.eq rt, 'str'] [
+            str eqv = new_reg 0
+            str call = str.concat eqv, ' = call i32 @luna_str_eq(ptr '
+            call = str.concat call, left
+            call = str.concat call, ', ptr '
+            call = str.concat call, right
+            call = str.concat call, ')'
+            emit_inst call
+            str sr = new_reg 0
+            str spred = 'ne'
+            if [str.eq op, 'ne'] [ spred = 'eq' ]
+            str ss = str.concat sr, ' = icmp '
+            ss = str.concat ss, spred
+            ss = str.concat ss, ' i32 '
+            ss = str.concat ss, eqv
+            ss = str.concat ss, ', 0'
+            emit_inst ss
+            g_expr_type = 'bool'
+            g_expr_addr = ''
+            = sr
+        ]
+
+        if [is_pointer_like lt and is_pointer_like rt] [
+            str pr = new_reg 0
+            str ps = str.concat pr, ' = icmp '
+            ps = str.concat ps, pred
+            ps = str.concat ps, ' ptr '
+            ps = str.concat ps, left
+            ps = str.concat ps, ', '
+            ps = str.concat ps, right
+            emit_inst ps
+            g_expr_type = 'bool'
+            g_expr_addr = ''
+            = pr
+        ]
+
+        if [str.eq lt, 'bool' and str.eq rt, 'bool'] [
+            str br = new_reg 0
+            str bs = str.concat br, ' = icmp '
+            bs = str.concat bs, pred
+            bs = str.concat bs, ' i1 '
+            bs = str.concat bs, left
+            bs = str.concat bs, ', '
+            bs = str.concat bs, right
+            emit_inst bs
+            g_expr_type = 'bool'
+            g_expr_addr = ''
+            = br
+        ]
+
+        if [is_integer_like lt and is_integer_like rt] [
+            str ir = new_reg 0
+            str is = str.concat ir, ' = icmp '
+            is = str.concat is, pred
+            is = str.concat is, ' i32 '
+            is = str.concat is, left
+            is = str.concat is, ', '
+            is = str.concat is, right
+            emit_inst is
+            g_expr_type = 'bool'
+            g_expr_addr = ''
+            = ir
+        ]
+
+        if [str.eq lt, 'float' and str.eq rt, 'float'] [
+            str fpred = 'oeq'
+            if [str.eq op, 'ne'] [ fpred = 'une' ]
+            str fr = new_reg 0
+            str fs = str.concat fr, ' = fcmp '
+            fs = str.concat fs, fpred
+            fs = str.concat fs, ' double '
+            fs = str.concat fs, left
+            fs = str.concat fs, ', '
+            fs = str.concat fs, right
+            emit_inst fs
+            g_expr_type = 'bool'
+            g_expr_addr = ''
+            = fr
+        ]
+
+        operator_type_error op, lt, rt, op_line, op_start, op_end
         g_expr_type = 'bool'
         g_expr_addr = ''
-        = r
+        = '0'
     ]
-    str a2 = intify left, lt
-    str b2 = intify right, rt
-    str inst2 = 'add'
-    if [str.eq op, 'sub'] [ inst2 = 'sub' ]
-    if [str.eq op, 'mul'] [ inst2 = 'mul' ]
-    if [str.eq op, 'div'] [ inst2 = 'sdiv' ]
-    if [str.eq op, 'mod'] [ inst2 = 'srem' ]
-    str r2 = new_reg 0
-    str s2 = str.concat r2, ' = '
-    s2 = str.concat s2, inst2
-    s2 = str.concat s2, ' i32 '
-    s2 = str.concat s2, a2
-    s2 = str.concat s2, ', '
-    s2 = str.concat s2, b2
-    emit_inst s2
+
+    if [str.eq op, 'gt' or str.eq op, 'lt' or str.eq op, 'ge' or str.eq op, 'le'] [
+        if [is_integer_like lt and is_integer_like rt] [
+            str pred2 = 'sgt'
+            if [str.eq op, 'lt'] [ pred2 = 'slt' ]
+            if [str.eq op, 'ge'] [ pred2 = 'sge' ]
+            if [str.eq op, 'le'] [ pred2 = 'sle' ]
+            str r2 = new_reg 0
+            str s2 = str.concat r2, ' = icmp '
+            s2 = str.concat s2, pred2
+            s2 = str.concat s2, ' i32 '
+            s2 = str.concat s2, left
+            s2 = str.concat s2, ', '
+            s2 = str.concat s2, right
+            emit_inst s2
+            g_expr_type = 'bool'
+            g_expr_addr = ''
+            = r2
+        ]
+        if [str.eq lt, 'float' and str.eq rt, 'float'] [
+            str fpred2 = 'ogt'
+            if [str.eq op, 'lt'] [ fpred2 = 'olt' ]
+            if [str.eq op, 'ge'] [ fpred2 = 'oge' ]
+            if [str.eq op, 'le'] [ fpred2 = 'ole' ]
+            str fr2 = new_reg 0
+            str fs2 = str.concat fr2, ' = fcmp '
+            fs2 = str.concat fs2, fpred2
+            fs2 = str.concat fs2, ' double '
+            fs2 = str.concat fs2, left
+            fs2 = str.concat fs2, ', '
+            fs2 = str.concat fs2, right
+            emit_inst fs2
+            g_expr_type = 'bool'
+            g_expr_addr = ''
+            = fr2
+        ]
+        operator_type_error op, lt, rt, op_line, op_start, op_end
+        g_expr_type = 'bool'
+        g_expr_addr = ''
+        = '0'
+    ]
+
+    if [str.eq op, 'add' or str.eq op, 'sub' or str.eq op, 'mul' or str.eq op, 'div' or str.eq op, 'mod'] [
+        if [is_integer_like lt and is_integer_like rt] [
+            str inst2 = 'add'
+            if [str.eq op, 'sub'] [ inst2 = 'sub' ]
+            if [str.eq op, 'mul'] [ inst2 = 'mul' ]
+            if [str.eq op, 'div'] [ inst2 = 'sdiv' ]
+            if [str.eq op, 'mod'] [ inst2 = 'srem' ]
+            str r3 = new_reg 0
+            str s3 = str.concat r3, ' = '
+            s3 = str.concat s3, inst2
+            s3 = str.concat s3, ' i32 '
+            s3 = str.concat s3, left
+            s3 = str.concat s3, ', '
+            s3 = str.concat s3, right
+            emit_inst s3
+            g_expr_type = 'int'
+            g_expr_addr = ''
+            = r3
+        ]
+        if [str.eq lt, 'float' and str.eq rt, 'float'] [
+            str finst = 'fadd'
+            if [str.eq op, 'sub'] [ finst = 'fsub' ]
+            if [str.eq op, 'mul'] [ finst = 'fmul' ]
+            if [str.eq op, 'div'] [ finst = 'fdiv' ]
+            if [str.eq op, 'mod'] [ finst = 'frem' ]
+            str fr3 = new_reg 0
+            str fs3 = str.concat fr3, ' = '
+            fs3 = str.concat fs3, finst
+            fs3 = str.concat fs3, ' double '
+            fs3 = str.concat fs3, left
+            fs3 = str.concat fs3, ', '
+            fs3 = str.concat fs3, right
+            emit_inst fs3
+            g_expr_type = 'float'
+            g_expr_addr = ''
+            = fr3
+        ]
+        operator_type_error op, lt, rt, op_line, op_start, op_end
+        g_expr_type = 'int'
+        g_expr_addr = ''
+        = '0'
+    ]
+
+    operator_type_error op, lt, rt, op_line, op_start, op_end
     g_expr_type = 'int'
     g_expr_addr = ''
-    = r2
+    = '0'
 ]
 

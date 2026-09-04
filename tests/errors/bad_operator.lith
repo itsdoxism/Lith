@@ -1,0 +1,4 @@
+fn main [] int [
+    int value = 1 add 'two'
+    = value
+]
