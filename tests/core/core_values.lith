@@ -8,6 +8,10 @@ struct Node [
     ptr Node next
 ]
 
+struct Bucket [
+    arr int 2 items
+]
+
 arr int 3 global_numbers = [7, 8, 9]
 arr arr int 2 2 global_matrix = [[1, 2], [3, 4]]
 Pair global_pair = Pair [9, 4]
@@ -58,40 +62,56 @@ fn main [] int [
     if [make_pair [].right ne 20] [ = 9 ]
     if [global_pair.left ne 9] [ = 10 ]
 
+    Bucket bucket = Bucket [[30, 31]]
+    if [bucket.items[1] ne 31] [ = 11 ]
+
+    ptr Node heap_node = sys.alloc 1
+    heap_node.value = 55
+    heap_node.next = null
+    if [heap_node.value ne 55] [ = 12 ]
+    if [heap_node.next] [ = 13 ]
+    sys.free heap_node
+
     int grouped = add_two [1 add 2], [3 mul 4]
-    if [grouped ne 15] [ = 11 ]
+    if [grouped ne 15] [ = 14 ]
     int zero = answer []
-    if [zero ne 42] [ = 12 ]
+    if [zero ne 42] [ = 15 ]
 
     float mixed = 2 add 0.5
-    if [mixed ne 2.5] [ = 13 ]
+    if [mixed ne 2.5] [ = 16 ]
     int narrowed = mixed as int
-    if [narrowed ne 2] [ = 14 ]
+    if [narrowed ne 2] [ = 17 ]
     float widened = 4
-    if [widened ne 4.0] [ = 15 ]
+    if [widened ne 4.0] [ = 18 ]
     bool truthy = mixed as bool
-    if [not truthy] [ = 16 ]
+    if [not truthy] [ = 19 ]
 
     ptr int pnull = null
-    if [pnull] [ = 17 ]
+    if [pnull] [ = 20 ]
     str snull = null
-    if [snull] [ = 18 ]
-    if [global_null] [ = 19 ]
-    if [not str.eq global_text, 'lith'] [ = 20 ]
+    if [snull] [ = 21 ]
+    if [global_null] [ = 22 ]
+    if [not str.eq global_text, 'lith'] [ = 23 ]
 
     int choice = match 2 [
         is 1 [ 10 ]
         is 2 [ 20 ]
         else [ 30 ]
     ]
-    if [choice ne 20] [ = 21 ]
+    if [choice ne 20] [ = 24 ]
+
+    int grouped_choice = match [1 add 1] [
+        is 2 [ 44 ]
+        else [ 0 ]
+    ]
+    if [grouped_choice ne 44] [ = 25 ]
 
     str label = match 2 [
         is 1 [ 'one' ]
         is 2 [ 'two' ]
         else [ 'other' ]
     ]
-    if [not str.eq label, 'two'] [ = 22 ]
+    if [not str.eq label, 'two'] [ = 26 ]
 
     arr int 2 first = [5, 6]
     arr int 2 second = [7, 8]
@@ -99,11 +119,29 @@ fn main [] int [
         is 1 [ first ]
         else [ second ]
     ]
-    if [selected[0] ne 5] [ = 23 ]
+    if [selected[0] ne 5] [ = 27 ]
+
+    int selected_direct = match 1 [
+        is 1 [ first ]
+        else [ second ]
+    ][1]
+    if [selected_direct ne 6] [ = 28 ]
+
+    Pair matched_pair = match 1 [
+        is 1 [ original ]
+        else [ reversed ]
+    ]
+    if [matched_pair.right ne 20] [ = 29 ]
+
+    int matched_field = match 1 [
+        is 1 [ original ]
+        else [ reversed ]
+    ].left
+    if [matched_field ne 10] [ = 30 ]
 
     Node node = Node [3, null]
-    if [node.value ne 3] [ = 24 ]
-    if [node.next] [ = 25 ]
+    if [node.value ne 3] [ = 31 ]
+    if [node.next] [ = 32 ]
 
     = 0
 ]
