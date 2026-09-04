@@ -157,6 +157,7 @@ fn new_label [str prefix] str [
 
 fn emit_label [str name] int [
     emit_line str.concat name, ':'
+    g_current_label = name
     g_terminated = 0
     = 0
 ]
