@@ -3,8 +3,7 @@
 # The frontend has an implicit `entry` block followed by explicit label records.
 # This pass computes reachability from entry using branch/cbranch edges (and
 # conservative fallthrough), then removes whole unreachable blocks. Phi payloads
-# are rewritten so predecessors removed by CFG pruning do not survive as stale
-# incoming edges.
+# are rewritten so only incoming values from live CFG predecessor edges survive.
 
 fn ir_cfg_is_reachable [str reachable, str label] int [
     if [str.eq label, 'entry'] [ = 1 ]
@@ -28,6 +27,69 @@ fn ir_cfg_label_count [str code, ptr int starts, int record_count] int [
         i = i add 1
     ]
     = count
+]
+
+fn ir_cfg_edge_key [str from, str to] str [
+    str key = str.concat from, '~'
+    = str.concat key, to
+]
+
+fn ir_cfg_note_edge [str edges, str from, str to] str [
+    if [str.eq from, '' or str.eq to, ''] [ = edges ]
+    str key = ir_cfg_edge_key from, to
+    str out = map_put edges, key, '1'
+    sys.free key
+    = out
+]
+
+fn ir_cfg_has_edge [str edges, str from, str to] int [
+    str key = ir_cfg_edge_key from, to
+    str known = map_get edges, key
+    int yes = str.eq known, '1'
+    sys.free key
+    sys.free known
+    = yes
+]
+
+# Build the actual post-optimization CFG edge set. This is intentionally
+# separate from reachability: a block may be reachable while one of its old
+# outgoing edges has disappeared after cbranch simplification.
+fn ir_cfg_collect_edges [str code, ptr int starts, int record_count] str [
+    str edges = ''
+    str current = 'entry'
+    int terminated = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+
+        if [str.eq op, 'label'] [
+            if [terminated eq 0] [ edges = ir_cfg_note_edge edges, current, a ]
+            current = a
+            terminated = 0
+        ]
+        else [
+            if [str.eq op, 'branch'] [
+                edges = ir_cfg_note_edge edges, current, a
+                terminated = 1
+            ]
+            if [str.eq op, 'cbranch'] [
+                edges = ir_cfg_note_edge edges, current, b
+                edges = ir_cfg_note_edge edges, current, c
+                terminated = 1
+            ]
+            if [str.eq op, 'return' or str.eq op, 'unreachable'] [ terminated = 1 ]
+        ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        i = i add 1
+    ]
+    = edges
 ]
 
 # Compute the transitive set of blocks reachable from the implicit entry block.
@@ -78,7 +140,7 @@ fn ir_cfg_collect_reachable [str code, ptr int starts, int record_count] str [
     = reachable
 ]
 
-fn ir_cfg_rewrite_phi [str reachable, str a, str b, str c, str d, str e] str [
+fn ir_cfg_rewrite_phi [str reachable, str edges, str block_label, str a, str b, str c, str d, str e] str [
     int count = ir_parse_count_text c
     int kept = 0
     str payload = str.slice '', 0, 0
@@ -87,7 +149,7 @@ fn ir_cfg_rewrite_phi [str reachable, str a, str b, str c, str d, str e] str [
         str pair = ir_list_item e, i
         str value = ir_pair_left pair
         str pred = ir_pair_right pair
-        if [ir_cfg_is_reachable reachable, pred] [
+        if [ir_cfg_is_reachable reachable, pred and ir_cfg_has_edge edges, pred, block_label] [
             str next = ir_arg_pair value, pred
             payload = ir_append_owned payload, next
             sys.free next
@@ -99,10 +161,8 @@ fn ir_cfg_rewrite_phi [str reachable, str a, str b, str c, str d, str e] str [
         i = i add 1
     ]
 
-    # A reachable phi should always retain at least one incoming edge. Preserve
-    # the original record on malformed/incomplete CFG rather than manufacturing
-    # a zero-input phi; the following verifier remains the authority.
     if [kept eq 0] [
+        ir_validation_error 'reachable phi has no live CFG predecessor edge'
         sys.free payload
         = ir_encode_record 'phi', a, b, c, d, e
     ]
@@ -120,15 +180,20 @@ fn ir_cfg_prune_unreachable [str code] str [
     ptr int starts = sys.alloc index_slots
     ir_index_fill code, record_count, starts
     str reachable = ir_cfg_collect_reachable code, starts, record_count
+    str edges = ir_cfg_collect_edges code, starts, record_count
 
     str out = str.slice '', 0, 0
+    str block_label = 'entry'
     int block_reachable = 1
     int i = 0
     while [i lt record_count] [
         str op = ir_index_field code, starts, i, 0
         str a = ir_index_field code, starts, i, 1
 
-        if [str.eq op, 'label'] [ block_reachable = ir_cfg_is_reachable reachable, a ]
+        if [str.eq op, 'label'] [
+            block_label = a
+            block_reachable = ir_cfg_is_reachable reachable, a
+        ]
 
         if [block_reachable] [
             if [str.eq op, 'phi'] [
@@ -136,7 +201,7 @@ fn ir_cfg_prune_unreachable [str code] str [
                 str c = ir_index_field code, starts, i, 3
                 str d = ir_index_field code, starts, i, 4
                 str e = ir_index_field code, starts, i, 5
-                str line = ir_cfg_rewrite_phi reachable, a, b, c, d, e
+                str line = ir_cfg_rewrite_phi reachable, edges, block_label, a, b, c, d, e
                 out = ir_append_owned out, line
                 sys.free line
                 sys.free b
