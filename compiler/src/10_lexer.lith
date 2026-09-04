@@ -21,13 +21,36 @@ fn diagnostic_line_end [int pos] int [
     = finish
 ]
 
+fn diagnostic_location [int pos, int merged_line] str [
+    int scan = diagnostic_line_start pos
+    int local_line = 1
+    while [scan gt 0] [
+        int previous_end = scan sub 1
+        int previous_start = diagnostic_line_start previous_end
+        str previous_line = str.slice g_src, previous_start, previous_end
+        if [str.starts previous_line, '#@module '] [
+            int n = str.len previous_line
+            str path = str.slice previous_line, 9, n
+            str out = 'line '
+            out = str.concat out, int.str local_line
+            out = str.concat out, ' ('
+            out = str.concat out, path
+            = str.concat out, ')'
+        ]
+        local_line = local_line add 1
+        scan = previous_start
+    ]
+    str fallback = 'line '
+    = str.concat fallback, int.str merged_line
+]
+
 fn make_diagnostic [str msg, int line, int start, int finish] str [
     int line_start = diagnostic_line_start start
     int line_end = diagnostic_line_end start
     str source_line = str.slice g_src, line_start, line_end
 
-    str out = 'error: line '
-    out = str.concat out, int.str line
+    str out = 'error: '
+    out = str.concat out, diagnostic_location start, line
     out = str.concat out, ': '
     out = str.concat out, msg
     out = str.concat out, str.chr 10
