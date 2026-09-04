@@ -1,0 +1,28 @@
+use str
+use sys
+
+struct Token [
+    int kind
+    str text
+    int line
+]
+
+fn main [] int [
+    ptr Token tokens = sys.alloc 2
+
+    tokens[0].kind = 7
+    tokens[0].text = 'alpha'
+    tokens[0].line = 3
+
+    tokens[1].kind = 9
+    tokens[1].text = 'beta'
+    tokens[1].line = 4
+
+    int first_len = str.len tokens[0].text
+    int second_len = str.len tokens[1].text
+    int ok = tokens[0].kind eq 7 and tokens[0].line eq 3 and first_len eq 5 and tokens[1].kind eq 9 and tokens[1].line eq 4 and second_len eq 4
+
+    sys.free tokens
+    if [ok] [ = 0 ]
+    = 1
+]

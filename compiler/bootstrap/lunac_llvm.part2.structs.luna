@@ -1,0 +1,370 @@
+    d = str.concat d, int.str size
+    d = str.concat d, ' x i8] c'
+    d = str.concat d, q
+    d = str.concat d, data
+    d = str.concat d, q
+    d = str.concat d, ', align 1'
+    emit_string_line d
+    str r = str.concat 'getelementptr inbounds ([', int.str size
+    r = str.concat r, ' x i8], ptr '
+    r = str.concat r, name
+    r = str.concat r, ', i64 0, i64 0)'
+    = r
+]
+
+fn precedence [str op] int [
+    if [str.eq op, 'or'] [ = 1 ]
+    if [str.eq op, 'and'] [ = 2 ]
+    if [str.eq op, 'eq'] [ = 3 ]
+    if [str.eq op, 'ne'] [ = 3 ]
+    if [str.eq op, 'gt'] [ = 3 ]
+    if [str.eq op, 'lt'] [ = 3 ]
+    if [str.eq op, 'ge'] [ = 3 ]
+    if [str.eq op, 'le'] [ = 3 ]
+    if [str.eq op, 'add'] [ = 4 ]
+    if [str.eq op, 'sub'] [ = 4 ]
+    if [str.eq op, 'mul'] [ = 5 ]
+    if [str.eq op, 'div'] [ = 5 ]
+    if [str.eq op, 'mod'] [ = 5 ]
+    = 0
+]
+
+fn starts_expr [int unused] int [
+    if [str.eq g_kind, 'int'] [ = 1 ]
+    if [str.eq g_kind, 'float'] [ = 1 ]
+    if [str.eq g_kind, 'str'] [ = 1 ]
+    if [str.eq g_kind, 'id'] [ = 1 ]
+    = 0
+]
+
+fn mapped_name [str name] str [
+    if [str.eq name, 'io.read_text'] [ = 'luna_read_text' ]
+    if [str.eq name, 'io.write_text'] [ = 'luna_write_text' ]
+    if [str.eq name, 'str.len'] [ = 'luna_str_len' ]
+    if [str.eq name, 'str.at'] [ = 'luna_str_at' ]
+    if [str.eq name, 'str.slice'] [ = 'luna_str_slice' ]
+    if [str.eq name, 'str.concat'] [ = 'luna_str_concat' ]
+    if [str.eq name, 'str.eq'] [ = 'luna_str_eq' ]
+    if [str.eq name, 'str.starts'] [ = 'luna_str_starts' ]
+    if [str.eq name, 'str.trim'] [ = 'luna_str_trim' ]
+    if [str.eq name, 'str.chr'] [ = 'luna_str_chr' ]
+    if [str.eq name, 'int.str'] [ = 'luna_int_str' ]
+    = name
+]
+
+fn builtin_ret [str name] str [
+    if [str.eq name, 'io.read_text'] [ = 'str' ]
+    if [str.eq name, 'io.write_text'] [ = 'int' ]
+    if [str.eq name, 'str.len'] [ = 'int' ]
+    if [str.eq name, 'str.at'] [ = 'int' ]
+    if [str.eq name, 'str.slice'] [ = 'str' ]
+    if [str.eq name, 'str.concat'] [ = 'str' ]
+    if [str.eq name, 'str.eq'] [ = 'int' ]
+    if [str.eq name, 'str.starts'] [ = 'int' ]
+    if [str.eq name, 'str.trim'] [ = 'str' ]
+    if [str.eq name, 'str.chr'] [ = 'str' ]
+    if [str.eq name, 'int.str'] [ = 'str' ]
+    = map_get g_fn_ret, name
+]
+
+fn builtin_argc [str name] int [
+    if [str.eq name, 'io.read_text'] [ = 1 ]
+    if [str.eq name, 'io.write_text'] [ = 2 ]
+    if [str.eq name, 'str.len'] [ = 1 ]
+    if [str.eq name, 'str.at'] [ = 2 ]
+    if [str.eq name, 'str.slice'] [ = 3 ]
+    if [str.eq name, 'str.concat'] [ = 2 ]
+    if [str.eq name, 'str.eq'] [ = 2 ]
+    if [str.eq name, 'str.starts'] [ = 2 ]
+    if [str.eq name, 'str.trim'] [ = 1 ]
+    if [str.eq name, 'str.chr'] [ = 1 ]
+    if [str.eq name, 'int.str'] [ = 1 ]
+    str n = map_get g_fn_argc, name
+    if [str.eq n, ''] [ = 0 ]
+    # Function calls in the bootstrap source never need this numeric value for user functions.
+    = 0
+]
+
+fn builtin_param [str name, int index] str [
+    if [str.eq name, 'io.read_text'] [ = 'str' ]
+    if [str.eq name, 'io.write_text'] [ = 'str' ]
+    if [str.eq name, 'str.len'] [ = 'str' ]
+    if [str.eq name, 'str.at'] [
+        if [index eq 0] [ = 'str' ]
+        = 'int'
+    ]
+    if [str.eq name, 'str.slice'] [
+        if [index eq 0] [ = 'str' ]
+        = 'int'
+    ]
+    if [str.eq name, 'str.concat'] [ = 'str' ]
+    if [str.eq name, 'str.eq'] [ = 'str' ]
+    if [str.eq name, 'str.starts'] [ = 'str' ]
+    if [str.eq name, 'str.trim'] [ = 'str' ]
+    if [str.eq name, 'str.chr'] [ = 'int' ]
+    if [str.eq name, 'int.str'] [ = 'int' ]
+    str key = fn_param_key name, index
+    = map_get g_fn_params, key
+]
+
+fn boolify [str op, str typ] str [
+    if [str.eq typ, 'bool'] [ = op ]
+    str r = new_reg 0
+    if [str.eq typ, 'str' or str.starts typ, 'ptr '] [
+        str s = str.concat r, ' = icmp ne ptr '
+        s = str.concat s, op
+        s = str.concat s, ', null'
+        emit_inst s
+        = r
+    ]
+    str s2 = str.concat r, ' = icmp ne i32 '
+    s2 = str.concat s2, op
+    s2 = str.concat s2, ', 0'
+    emit_inst s2
+    = r
+]
+
+fn intify [str op, str typ] str [
+    if [str.eq typ, 'int' or str.eq typ, 'char'] [ = op ]
+    if [str.eq typ, 'bool'] [
+        str r = new_reg 0
+        str s = str.concat r, ' = zext i1 '
+        s = str.concat s, op
+        s = str.concat s, ' to i32'
+        emit_inst s
+        = r
+    ]
+    = op
+]
+
+fn cast_value [str op, str from, str to] str [
+    if [str.eq from, to] [ = op ]
+    if [str.eq to, 'bool'] [ = boolify op, from ]
+    if [str.eq to, 'int'] [ = intify op, from ]
+    if [str.eq to, 'char'] [ = intify op, from ]
+    if [str.eq to, 'str' and str.starts from, 'ptr '] [ = op ]
+    if [str.starts to, 'ptr ' and str.eq from, 'str'] [ = op ]
+    if [str.starts to, 'ptr ' and str.starts from, 'ptr '] [ = op ]
+    = op
+]
+
+fn emit_binary [str op, str left, str lt, str right, str rt] str [
+    if [str.eq op, 'and' or str.eq op, 'or'] [
+        str a = boolify left, lt
+        str b = boolify right, rt
+        str r = new_reg 0
+        str inst = 'and'
+        if [str.eq op, 'or'] [ inst = 'or' ]
+        str s = str.concat r, ' = '
+        s = str.concat s, inst
+        s = str.concat s, ' i1 '
+        s = str.concat s, a
+        s = str.concat s, ', '
+        s = str.concat s, b
+        emit_inst s
+        g_expr_type = 'bool'
+        g_expr_addr = ''
+        = r
+    ]
+    if [str.eq op, 'eq' or str.eq op, 'ne' or str.eq op, 'gt' or str.eq op, 'lt' or str.eq op, 'ge' or str.eq op, 'le'] [
+        str a = intify left, lt
+        str b = intify right, rt
+        str pred = 'eq'
+        if [str.eq op, 'ne'] [ pred = 'ne' ]
+        if [str.eq op, 'gt'] [ pred = 'sgt' ]
+        if [str.eq op, 'lt'] [ pred = 'slt' ]
+        if [str.eq op, 'ge'] [ pred = 'sge' ]
+        if [str.eq op, 'le'] [ pred = 'sle' ]
+        str r = new_reg 0
+        str s = str.concat r, ' = icmp '
+        s = str.concat s, pred
+        s = str.concat s, ' i32 '
+        s = str.concat s, a
+        s = str.concat s, ', '
+        s = str.concat s, b
+        emit_inst s
+        g_expr_type = 'bool'
+        g_expr_addr = ''
+        = r
+    ]
+    str a2 = intify left, lt
+    str b2 = intify right, rt
+    str inst2 = 'add'
+    if [str.eq op, 'sub'] [ inst2 = 'sub' ]
+    if [str.eq op, 'mul'] [ inst2 = 'mul' ]
+    if [str.eq op, 'div'] [ inst2 = 'sdiv' ]
+    if [str.eq op, 'mod'] [ inst2 = 'srem' ]
+    str r2 = new_reg 0
+    str s2 = str.concat r2, ' = '
+    s2 = str.concat s2, inst2
+    s2 = str.concat s2, ' i32 '
+    s2 = str.concat s2, a2
+    s2 = str.concat s2, ', '
+    s2 = str.concat s2, b2
+    emit_inst s2
+    g_expr_type = 'int'
+    g_expr_addr = ''
+    = r2
+]
+
+fn parse_expr [int minp] str [
+    str left = parse_primary 0
+    str lt = g_expr_type
+    str la = g_expr_addr
+    while [str.eq g_kind, 'id' and precedence g_text ge minp and precedence g_text gt 0] [
+        str op = g_text
+        int p = precedence op
+        next_tok 0
+        int nextp = p add 1
+        str right = parse_expr nextp
+        str rt = g_expr_type
+        left = emit_binary op, left, lt, right, rt
+        lt = g_expr_type
+        la = ''
+    ]
+    g_expr_type = lt
+    g_expr_addr = la
+    = left
+]
+
+fn emit_call [str name] str [
+    str args = ''
+    int index = 0
+    int first = 1
+    while [starts_expr 0] [
+        str a = parse_expr 6
+        str at = g_expr_type
+        str pt = builtin_param name, index
+        if [not str.eq pt, ''] [
+            a = cast_value a, at, pt
+            at = pt
+        ]
+        if [first eq 0] [ args = str.concat args, ', ' ]
+        args = str.concat args, llvm_type at
+        args = str.concat args, ' '
+        args = str.concat args, a
+        first = 0
+        index = index add 1
+        if [str.eq g_kind, 'comma'] [ next_tok 0 ]
+        else [ break ]
+    ]
+    str ret = builtin_ret name
+    str mapped = mapped_name name
+    str r = new_reg 0
+    str s = str.concat r, ' = call '
+    s = str.concat s, llvm_type ret
+    s = str.concat s, ' @'
+    s = str.concat s, mapped
+    s = str.concat s, '('
+    s = str.concat s, args
+    s = str.concat s, ')'
+    emit_inst s
+    g_expr_type = ret
+    g_expr_addr = ''
+    = r
+]
+
+fn parse_primary [int unused] str [
+    if [str.eq g_kind, 'int'] [
+        str v = g_text
+        next_tok 0
+        g_expr_type = 'int'
+        g_expr_addr = ''
+        = v
+    ]
+    if [str.eq g_kind, 'float'] [
+        str v2 = g_text
+        next_tok 0
+        g_expr_type = 'float'
+        g_expr_addr = ''
+        = v2
+    ]
+    if [str.eq g_kind, 'str'] [
+        str v3 = string_const g_text
+        next_tok 0
+        g_expr_type = 'str'
+        g_expr_addr = ''
+        = v3
+    ]
+    if [str.eq g_kind, 'id' and str.eq g_text, 'true'] [
+        next_tok 0
+        g_expr_type = 'bool'
+        g_expr_addr = ''
+        = '1'
+    ]
+    if [str.eq g_kind, 'id' and str.eq g_text, 'false'] [
+        next_tok 0
+        g_expr_type = 'bool'
+        g_expr_addr = ''
+        = '0'
+    ]
+    if [str.eq g_kind, 'id' and str.eq g_text, 'not'] [
+        next_tok 0
+        str x = parse_primary 0
+        str xt = g_expr_type
+        str b = boolify x, xt
+        str rnot = new_reg 0
+        str sn = str.concat rnot, ' = xor i1 '
+        sn = str.concat sn, b
+        sn = str.concat sn, ', true'
+        emit_inst sn
+        g_expr_type = 'bool'
+        g_expr_addr = ''
+        = rnot
+    ]
+    if [str.eq g_kind, 'id'] [
+        str name = g_text
+        next_tok 0
+        while [str.eq g_kind, 'dot'] [
+            next_tok 0
+            name = str.concat name, '.'
+            name = str.concat name, g_text
+            next_tok 0
+        ]
+        if [starts_expr 0 and not precedence g_text gt 0] [
+            = emit_call name
+        ]
+        str typ = local_type name
+        if [str.eq typ, ''] [
+            fail 'unknown variable'
+            g_expr_type = 'int'
+            g_expr_addr = ''
+            = '0'
+        ]
+        str addr = local_addr name
+        str r = new_reg 0
+        str s = str.concat r, ' = load '
+        s = str.concat s, llvm_type typ
+        s = str.concat s, ', ptr '
+        s = str.concat s, addr
+        emit_inst s
+        str value = r
+        str current_type = typ
+        str current_addr = addr
+        while [str.eq g_kind, 'lb'] [
+            next_tok 0
+            str idx = parse_expr 0
+            str it = g_expr_type
+            idx = intify idx, it
+            expect_kind 'rb'
+            if [not str.starts current_type, 'ptr '] [
+                fail 'indexing non pointer'
+                = value
+            ]
+            str elem = str.slice current_type, 4, str.len current_type
+            str gep = new_reg 0
+            str gs = str.concat gep, ' = getelementptr inbounds '
+            gs = str.concat gs, storage_type elem
+            gs = str.concat gs, ', ptr '
+            gs = str.concat gs, value
+            gs = str.concat gs, ', i32 '
+            gs = str.concat gs, idx
+            emit_inst gs
+            str loaded = new_reg 0
+            str ls = str.concat loaded, ' = load '
+            ls = str.concat ls, storage_type elem
+            ls = str.concat ls, ', ptr '
+            ls = str.concat ls, gep
+            emit_inst ls
+            value = loaded
+            current_type = elem
