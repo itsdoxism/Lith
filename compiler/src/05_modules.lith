@@ -33,6 +33,24 @@ fn path_pop [str path] str [
     = str.slice path, 0, i
 ]
 
+fn path_last_is_parent [str path] int [
+    if [str.eq path, '..'] [ = 1 ]
+    int n = str.len path
+    if [n lt 3] [ = 0 ]
+    int a = n sub 3
+    int b = n sub 2
+    int c = n sub 1
+    if [str.at path, a eq 47 and str.at path, b eq 46 and str.at path, c eq 46] [ = 1 ]
+    = 0
+]
+
+fn path_append_part [str path, str part] str [
+    if [str.eq path, ''] [ = part ]
+    if [str.eq path, '/'] [ = str.concat path, part ]
+    str out = str.concat path, '/'
+    = str.concat out, part
+]
+
 fn path_normalize [str path] str [
     int n = str.len path
     int absolute = 0
@@ -49,15 +67,18 @@ fn path_normalize [str path] str [
         str part = str.slice path, start, i
         if [str.eq part, '' or str.eq part, '.'] [ continue ]
         if [str.eq part, '..'] [
-            if [not str.eq out, '' and not str.eq out, '/'] [ out = path_pop out ]
+            if [absolute] [
+                if [not str.eq out, '/'] [ out = path_pop out ]
+            ]
+            else [
+                if [str.eq out, '' or path_last_is_parent out] [
+                    out = path_append_part out, '..'
+                ]
+                else [ out = path_pop out ]
+            ]
             continue
         ]
-        int out_len = str.len out
-        if [out_len gt 0] [
-            int last = out_len sub 1
-            if [str.at out, last ne 47] [ out = str.concat out, '/' ]
-        ]
-        out = str.concat out, part
+        out = path_append_part out, part
     ]
 
     if [str.eq out, ''] [ = '.' ]
