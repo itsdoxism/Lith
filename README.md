@@ -18,9 +18,13 @@ The LLVM-emitting compiler reaches a textual fixed point during self-compilation
 stage2.ll == stage3.ll == stage4.ll
 ```
 
-That is the executable bootstrap proof that the Luna-written compiler can reproduce itself.
+The current reference-parity compiler was locally validated at fixed point with SHA-256:
 
-The self-hosted LLVM compiler now covers a larger Stage-0 parity slice:
+```text
+82623acb09db0ca3435a0bd89117bc47ea05c9e01f373949a68a284072716b46
+```
+
+The self-hosted LLVM compiler now covers the executable public reference program, including:
 
 - typed pointers and pointer indexing
 - `sys.alloc`, `sys.realloc`, and `sys.free`
@@ -28,6 +32,8 @@ The self-hosted LLVM compiler now covers a larger Stage-0 parity slice:
 - struct-aware allocation sizing
 - indexed member access such as `tokens[0].kind`
 - member loads/stores for primitive and string fields
+- return-value `match / is / else`
+- `io.print` string-literal interpolation for int, char, bool, and str names
 
 Allocation sizes are derived from the declared pointer element type in generated LLVM IR rather than using a fixed byte multiplier.
 
@@ -85,6 +91,20 @@ Use the compiler frontend directly:
 
 `bin/luna` uses the self-hosted `build/lunac` compiler and then asks Clang to turn the generated LLVM IR plus `runtime/luna_runtime.ll` into the final executable.
 
+The public reference program can now be compiled by that same self-hosted native path:
+
+```sh
+make reference-selfhost
+```
+
+Expected output:
+
+```text
+dynamic Token array created
+items processed: 2
+first token category: word
+```
+
 ## Tests
 
 Run the LLVM self-host fixed-point proof:
@@ -97,6 +117,12 @@ Run the user-facing native driver, pointer-memory, and struct member smoke tests
 
 ```sh
 make driver-check
+```
+
+Run the self-hosted public reference proof:
+
+```sh
+make reference-selfhost
 ```
 
 Run every regression, including the older C bootstrap path:
@@ -113,12 +139,14 @@ bin/lunac                             native self-hosted compiler launcher
 compiler/lunac.py                     trusted legacy C bootstrap compiler
 compiler/lunac.luna                   older self-hosted C-emitting compiler
 compiler/lunac_llvm.py                trusted LLVM bootstrap backend
-compiler/bootstrap/lunac_llvm.part*   self-hosted LLVM-emitting compiler source
+compiler/bootstrap/lunac_llvm.part*   self-hosted LLVM-emitting compiler base source
+compiler/bootstrap/build_reference_parity.py  bootstrap composition for current parity source
 runtime/luna_runtime.c                legacy/bootstrap C runtime
 runtime/luna_runtime.ll               current LLVM runtime module
 tests/self_host.sh                    legacy C emitter fixed-point proof
 tests/llvm_backend.sh                 LLVM backend transition/runtime checks
 tests/llvm_self_host.sh               LLVM emitter fixed-point proof
+tests/reference_selfhost.sh           public reference through native self-host compiler
 tests/selfhost_memory.luna            pointer allocation/reallocation/free fixture
 tests/selfhost_structs.luna           struct layout/member fixture
 examples/reference.luna               executable language reference
@@ -126,12 +154,11 @@ examples/reference.luna               executable language reference
 
 ## Next milestones
 
-1. add self-hosted `match` support,
-2. add the full `io.print` interpolation surface,
+1. consolidate the split/generated bootstrap source into one canonical self-hosted `compiler/lunac.luna`,
+2. expand `match` and interpolation beyond the subset needed by the public reference,
 3. add array literals/iteration where they are still needed beyond pointer-backed collections,
-4. consolidate the split bootstrap source into the canonical Luna compiler source,
-5. reduce Python to a bootstrap-only recovery artifact,
-6. grow the standard library/runtime surface,
-7. optionally add object-file or direct machine-code emission later if Luna should stop depending on LLVM for final code generation too.
+4. reduce Python to a bootstrap-only recovery artifact,
+5. grow the standard library/runtime surface,
+6. optionally add object-file or direct machine-code emission later if Luna should stop depending on LLVM for final code generation too.
 
 See `docs/LANGUAGE.md` and `docs/SELF_HOSTING.md` for the language and bootstrap notes.
