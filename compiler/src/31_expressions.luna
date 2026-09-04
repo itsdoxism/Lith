@@ -1,0 +1,227 @@
+fn parse_expr [int minp] str [
+    str left = parse_primary 0
+    str lt = g_expr_type
+    str la = g_expr_addr
+    while [str.eq g_kind, 'id' and precedence g_text ge minp and precedence g_text gt 0] [
+        str op = g_text
+        int p = precedence op
+        next_tok 0
+        int nextp = p add 1
+        str right = parse_expr nextp
+        str rt = g_expr_type
+        left = emit_binary op, left, lt, right, rt
+        lt = g_expr_type
+        la = ''
+    ]
+    g_expr_type = lt
+    g_expr_addr = la
+    = left
+]
+
+fn emit_call [str name] str [
+    str args = ''
+    int index = 0
+    int first = 1
+    while [starts_expr 0] [
+        str a = parse_expr 6
+        str at = g_expr_type
+        str pt = builtin_param name, index
+        if [not str.eq pt, ''] [
+            a = cast_value a, at, pt
+            at = pt
+        ]
+        if [first eq 0] [ args = str.concat args, ', ' ]
+        args = str.concat args, llvm_type at
+        args = str.concat args, ' '
+        args = str.concat args, a
+        first = 0
+        index = index add 1
+        if [str.eq g_kind, 'comma'] [ next_tok 0 ]
+        else [ break ]
+    ]
+    str ret = builtin_ret name
+    str mapped = mapped_name name
+    str r = new_reg 0
+    str s = str.concat r, ' = call '
+    s = str.concat s, llvm_type ret
+    s = str.concat s, ' @'
+    s = str.concat s, mapped
+    s = str.concat s, '('
+    s = str.concat s, args
+    s = str.concat s, ')'
+    emit_inst s
+    g_expr_type = ret
+    g_expr_addr = ''
+    = r
+]
+
+fn parse_primary [int unused] str [
+    if [str.eq g_kind, 'int'] [
+        str v = g_text
+        next_tok 0
+        g_expr_type = 'int'
+        g_expr_addr = ''
+        = v
+    ]
+    if [str.eq g_kind, 'float'] [
+        str v2 = g_text
+        next_tok 0
+        g_expr_type = 'float'
+        g_expr_addr = ''
+        = v2
+    ]
+    if [str.eq g_kind, 'str'] [
+        str v3 = string_const g_text
+        next_tok 0
+        g_expr_type = 'str'
+        g_expr_addr = ''
+        = v3
+    ]
+    if [str.eq g_kind, 'id' and str.eq g_text, 'true'] [
+        next_tok 0
+        g_expr_type = 'bool'
+        g_expr_addr = ''
+        = '1'
+    ]
+    if [str.eq g_kind, 'id' and str.eq g_text, 'false'] [
+        next_tok 0
+        g_expr_type = 'bool'
+        g_expr_addr = ''
+        = '0'
+    ]
+    if [str.eq g_kind, 'id' and str.eq g_text, 'not'] [
+        next_tok 0
+        str x = parse_primary 0
+        str xt = g_expr_type
+        str b = boolify x, xt
+        str rnot = new_reg 0
+        str sn = str.concat rnot, ' = xor i1 '
+        sn = str.concat sn, b
+        sn = str.concat sn, ', true'
+        emit_inst sn
+        g_expr_type = 'bool'
+        g_expr_addr = ''
+        = rnot
+    ]
+    if [str.eq g_kind, 'id'] [
+        str name = g_text
+        next_tok 0
+        while [str.eq g_kind, 'dot'] [
+            next_tok 0
+            name = str.concat name, '.'
+            name = str.concat name, g_text
+            next_tok 0
+        ]
+        if [starts_expr 0 and not precedence g_text gt 0] [
+            = emit_call name
+        ]
+        str typ = local_type name
+        if [str.eq typ, ''] [
+            fail 'unknown variable'
+            g_expr_type = 'int'
+            g_expr_addr = ''
+            = '0'
+        ]
+        str addr = local_addr name
+        str value = addr
+        str current_type = typ
+        str current_addr = addr
+        if [not str.starts typ, 'arr '] [
+            str r = new_reg 0
+            str s = str.concat r, ' = load '
+            s = str.concat s, storage_type typ
+            s = str.concat s, ', ptr '
+            s = str.concat s, addr
+            emit_inst s
+            value = r
+        ]
+        while [str.eq g_kind, 'lb'] [
+            next_tok 0
+            str idx = parse_expr 0
+            str it = g_expr_type
+            idx = intify idx, it
+            expect_kind 'rb'
+            str elem = ''
+            str gep = new_reg 0
+            str gs = ''
+            if [str.starts current_type, 'ptr '] [
+                elem = str.slice current_type, 4, str.len current_type
+                gs = str.concat gep, ' = getelementptr inbounds '
+                gs = str.concat gs, storage_type elem
+                gs = str.concat gs, ', ptr '
+                gs = str.concat gs, value
+                gs = str.concat gs, ', i32 '
+                gs = str.concat gs, idx
+            ]
+            else [
+                if [str.starts current_type, 'arr '] [
+                    elem = array_elem_type current_type
+                    gs = str.concat gep, ' = getelementptr inbounds '
+                    gs = str.concat gs, storage_type current_type
+                    gs = str.concat gs, ', ptr '
+                    gs = str.concat gs, current_addr
+                    gs = str.concat gs, ', i32 0, i32 '
+                    gs = str.concat gs, idx
+                ]
+                else [
+                    fail 'indexing non pointer or array'
+                    = value
+                ]
+            ]
+            emit_inst gs
+            str loaded = new_reg 0
+            str ls = str.concat loaded, ' = load '
+            ls = str.concat ls, storage_type elem
+            ls = str.concat ls, ', ptr '
+            ls = str.concat ls, gep
+            emit_inst ls
+            value = loaded
+            current_type = elem
+            current_addr = gep
+        ]
+        while [str.eq g_kind, 'dot'] [
+            next_tok 0
+            if [not str.eq g_kind, 'id'] [
+                fail 'expected struct field'
+                = value
+            ]
+            str field = g_text
+            next_tok 0
+            if [not is_struct_type current_type] [
+                fail 'member access on non struct'
+                = value
+            ]
+            str field_index = struct_field_index current_type, field
+            str field_type = struct_field_type current_type, field
+            if [str.eq field_index, '' or str.eq field_type, ''] [
+                fail 'unknown struct field'
+                = value
+            ]
+            str field_addr = new_reg 0
+            str fs = str.concat field_addr, ' = getelementptr inbounds '
+            fs = str.concat fs, storage_type current_type
+            fs = str.concat fs, ', ptr '
+            fs = str.concat fs, current_addr
+            fs = str.concat fs, ', i32 0, i32 '
+            fs = str.concat fs, field_index
+            emit_inst fs
+            str field_value = new_reg 0
+            str fl = str.concat field_value, ' = load '
+            fl = str.concat fl, storage_type field_type
+            fl = str.concat fl, ', ptr '
+            fl = str.concat fl, field_addr
+            emit_inst fl
+            value = field_value
+            current_type = field_type
+            current_addr = field_addr
+        ]
+        g_expr_type = current_type
+        g_expr_addr = current_addr
+        = value
+    ]
+    fail 'expected expression'
+    g_expr_type = 'int'
+    g_expr_addr = ''
+    = '0'
+]
+
