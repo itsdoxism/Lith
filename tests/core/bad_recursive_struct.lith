@@ -1,0 +1,7 @@
+struct Loop [
+    Loop child
+]
+
+fn main [] int [
+    = 0
+]
