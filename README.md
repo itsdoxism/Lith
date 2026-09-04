@@ -1,149 +1,120 @@
-# Luna
+# Lith
 
-Luna is an experimental **zero-shift programming language** built around ergonomic 10-finger typing. Structural syntax avoids shifted punctuation where possible: blocks use `[` and `]`, strings use single quotes, and operators are words such as `add`, `sub`, `eq`, `lt`, `and`, and `or`.
+Lith is an experimental **zero-shift programming language** built around ergonomic 10-finger typing. Structural syntax avoids shifted punctuation where possible: blocks use `[` and `]`, strings use single quotes, and operators are words such as `add`, `sub`, `eq`, `lt`, `and`, and `or`.
+
+> Lith was previously named **Luna**. The public CLI and source extension are now `lith`, `lithc`, and `.lith`. The old `luna`/`lunac` commands remain as temporary compatibility shims.
 
 ## Current status
 
-Luna is self-hosting. The normal native path is:
+Lith is self-hosting and its native path is:
 
 ```text
-Luna source -> self-hosted Luna compiler -> LLVM IR -> native binary
+Lith source -> self-hosted Lith compiler -> LLVM IR -> native binary
 ```
 
-The canonical compiler implementation is now `compiler/lunac.luna`. C is no longer an intermediate in the normal path; the old C-emitting compiler and C runtime remain only as bootstrap/regression references.
+C is not an intermediate in the normal LLVM path. The old C bootstrap remains only as a regression/recovery path.
 
-The LLVM compiler reaches a textual self-host fixed point:
+The self-hosted compiler currently covers the executable reference surface plus:
 
-```text
-stage2.ll == stage3.ll == stage4.ll
-```
+- typed pointers and pointer indexing
+- `sys.alloc`, `sys.realloc`, and `sys.free`
+- structs and member loads/stores
+- return-value `match / is / else`
+- `io.print` interpolation
+- array literals such as `arr values = [1, 2, 3]`
+- array indexing and assignment
+- `loop item in values` with `break` / `continue`
 
-The current canonical compiler was locally validated at fixed point with SHA-256:
+The compiler source is split into ordered Lith modules under `compiler/src/` and concatenated deterministically for bootstrap/self-hosting.
 
-```text
-82623acb09db0ca3435a0bd89117bc47ea05c9e01f373949a68a284072716b46
-```
-
-The self-hosted compiler covers the executable public reference program, including typed pointers, pointer indexing, `sys.alloc`/`realloc`/`free`, structs and member access, `while`, user functions, return-value `match / is / else`, and `io.print` interpolation for int/char/bool/str names.
-
-## Build the compiler
+## Build
 
 Requirements:
 
-- Python 3.10+ for the first bootstrap from a clean checkout
+- Python 3.10+ for the initial trusted bootstrap from a clean checkout
 - Clang with LLVM IR support
-
-Bootstrap once:
 
 ```sh
 make compiler
 ```
 
-This creates `build/lunac`. The build chain is:
+This produces:
 
 ```text
-compiler/lunac.luna
-        ↓ trusted Python LLVM bootstrap (Stage 1 only)
-Stage 1 LLVM
-        ↓ Clang
-native Stage 1 Luna compiler
-        ↓ compiles compiler/lunac.luna
-Stage 2 LLVM
-        ↓ Clang
-build/lunac
+build/lithc
 ```
 
-After `build/lunac` exists, ordinary Luna compilation does not need Python.
+After that, ordinary Lith compilation does not need Python.
 
-## Compile Luna programs
+## Compile Lith programs
 
 ```sh
-./bin/luna hello.luna -o hello
+./bin/lith hello.lith -o hello
 ./hello
 ```
 
-Emit LLVM IR instead:
+Emit LLVM IR:
 
 ```sh
-./bin/luna hello.luna --emit-llvm hello.ll
+./bin/lith hello.lith --emit-llvm hello.ll
 ```
 
 Use the compiler frontend directly:
 
 ```sh
-./bin/lunac hello.luna hello.ll
+./bin/lithc hello.lith hello.ll
 ```
 
-`bin/luna` uses `build/lunac`, then asks Clang to lower the generated LLVM IR plus `runtime/luna_runtime.ll` into the final executable.
-
-The public reference program passes through that same path:
+The old commands still forward to the new names during migration:
 
 ```sh
-make reference-selfhost
+./bin/luna  # deprecated -> lith
+./bin/lunac # deprecated -> lithc
 ```
 
-Expected output:
+## Example
 
-```text
-dynamic Token array created
-items processed: 2
-first token category: word
+```lith
+arr values = [10, 20, 30]
+values[1] = 25
+
+loop item in values [
+    io.print 'value: [item]'
+]
 ```
 
 ## Tests
 
-Self-host fixed point:
-
-```sh
-make llvm-selfhost
-```
-
-Verify that the historical split bootstrap source still reproduces the canonical compiler byte-for-byte:
-
-```sh
-make bootstrap-source-check
-```
-
-User-facing native smoke tests:
-
 ```sh
 make driver-check
 make reference-selfhost
-```
-
-Every regression, including the legacy C bootstrap path:
-
-```sh
+make llvm-selfhost
 make test
 ```
+
+`make test` also runs the older C bootstrap regression path.
 
 ## Repository layout
 
 ```text
-bin/luna                              Luna source -> native driver
-bin/lunac                             native self-hosted compiler launcher
-compiler/lunac.luna                   canonical self-hosted LLVM compiler
-compiler/lunac_llvm.py                trusted initial LLVM bootstrap
-compiler/lunac.py                     trusted legacy C bootstrap compiler
-compiler/bootstrap/lunac_c.luna       legacy self-hosted C-emitter source
-compiler/bootstrap/lunac_llvm.part*   historical/recovery LLVM source fragments
-compiler/bootstrap/build_reference_parity.py
-                                      reproduces canonical source from fragments
-runtime/luna_runtime.ll               current LLVM runtime module
-runtime/luna_runtime.c                legacy C runtime
-tests/llvm_self_host.sh               canonical LLVM fixed-point proof
-tests/self_host.sh                    legacy C-emitter fixed-point proof
-tests/reference_selfhost.sh           public reference through native Luna compiler
-examples/reference.luna               executable language reference
+bin/lith                     Lith source -> native driver
+bin/lithc                    native self-hosted compiler launcher
+compiler/src/*.lith          current self-hosted compiler source modules
+compiler/lunac_llvm.py       trusted Python LLVM bootstrap backend (legacy internal name)
+compiler/lunac.py            trusted C bootstrap backend (legacy internal name)
+runtime/luna_runtime.ll      current runtime ABI (legacy internal name)
+examples/reference.lith      executable language reference
+tests/*.lith                 language/runtime fixtures
 ```
+
+The remaining `luna`/`lunac` names are internal bootstrap/compatibility names and can be retired separately after the public migration is stable.
 
 ## Next milestones
 
-1. finish array literal/iteration parity beyond pointer-backed collections,
-2. improve diagnostics, source locations, symbol/type checking, and malformed-program errors,
-3. make modules/imports and the standard-library surface more deliberate,
-4. simplify bootstrap/recovery artifacts while keeping the chain reproducible,
-5. add package/project tooling and a cleaner user-facing compiler CLI,
-6. optionally add object-file or direct machine-code emission if Luna should eventually stop depending on LLVM for final code generation.
+1. finish semantic diagnostics and type errors,
+2. expand arrays and `match` beyond the current self-hosted surface,
+3. grow the standard library/runtime,
+4. reduce Python further toward recovery/bootstrap-only status,
+5. optionally add direct object-code or machine-code generation later.
 
-See `docs/LANGUAGE.md` and `docs/SELF_HOSTING.md` for the language and bootstrap notes.
+See `docs/LANGUAGE.md` and `docs/SELF_HOSTING.md` for details.

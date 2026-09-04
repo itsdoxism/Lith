@@ -4,7 +4,7 @@ set -eu
 BUILD=${BUILD:-build}
 mkdir -p "$BUILD"
 
-sh bin/luna examples/reference.luna -o "$BUILD/reference-selfhost"
+sh bin/lith examples/reference.lith -o "$BUILD/reference-selfhost"
 actual=$("$BUILD/reference-selfhost")
 expected='dynamic Token array created
 items processed: 2
@@ -19,4 +19,4 @@ if [ "$actual" != "$expected" ]; then
   exit 1
 fi
 
-echo 'Self-hosted reference program: passed'
+echo 'Self-hosted Lith reference program: passed'
