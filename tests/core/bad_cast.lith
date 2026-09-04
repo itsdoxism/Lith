@@ -1,0 +1,5 @@
+fn main [] int [
+    str text = 'x'
+    int value = text as int
+    = value
+]
