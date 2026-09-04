@@ -292,6 +292,7 @@ fn ir_optimize_function [str code] str [
     = out
 ]
 
+
 # Optimizer v2: target-neutral dead-value elimination and conservative CFG pruning.
 # Side-effecting operations are never removed by DCE.
 fn ir_temp_id [str value] int [
