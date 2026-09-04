@@ -21,37 +21,23 @@ fn diagnostic_line_end [int pos] int [
     = finish
 ]
 
-fn diagnostic_location [int pos, int merged_line] str [
-    int scan = diagnostic_line_start pos
-    int local_line = 1
-    while [scan gt 0] [
-        int previous_end = scan sub 1
-        int previous_start = diagnostic_line_start previous_end
-        str previous_line = str.slice g_src, previous_start, previous_end
-        if [str.starts previous_line, '#@module '] [
-            int n = str.len previous_line
-            str path = str.slice previous_line, 9, n
-            str out = 'line '
-            out = str.concat out, int.str local_line
-            out = str.concat out, ' ('
-            out = str.concat out, path
-            = str.concat out, ')'
-        ]
-        local_line = local_line add 1
-        scan = previous_start
-    ]
-    str fallback = 'line '
-    = str.concat fallback, int.str merged_line
-]
-
-fn make_diagnostic [str msg, int line, int start, int finish] str [
+fn make_diagnostic [str msg, str file, int line, int start, int finish] str [
     int line_start = diagnostic_line_start start
     int line_end = diagnostic_line_end start
     str source_line = str.slice g_src, line_start, line_end
 
     str out = 'error: '
-    out = str.concat out, diagnostic_location start, line
-    out = str.concat out, ': '
+    if [not str.eq file, ''] [
+        out = str.concat out, file
+        out = str.concat out, ':'
+        out = str.concat out, int.str line
+        out = str.concat out, ': '
+    ]
+    else [
+        out = str.concat out, 'line '
+        out = str.concat out, int.str line
+        out = str.concat out, ': '
+    ]
     out = str.concat out, msg
     out = str.concat out, str.chr 10
     out = str.concat out, '    '
@@ -77,9 +63,9 @@ fn make_diagnostic [str msg, int line, int start, int finish] str [
     = out
 ]
 
-fn fail_at [str msg, int line, int start, int finish] int [
+fn append_diagnostic [str msg, str file, int line, int start, int finish] int [
     if [g_error_count lt 20] [
-        str diagnostic = make_diagnostic msg, line, start, finish
+        str diagnostic = make_diagnostic msg, file, line, start, finish
         if [not str.eq g_error_message, ''] [
             g_error_message = str.concat g_error_message, str.chr 10
             g_error_message = str.concat g_error_message, str.chr 10
@@ -91,12 +77,16 @@ fn fail_at [str msg, int line, int start, int finish] int [
     = 0
 ]
 
+fn fail_at [str msg, int line, int start, int finish] int [
+    = append_diagnostic msg, g_tok_file, line, start, finish
+]
+
 fn fail [str msg] int [
-    = fail_at msg, g_tok_line, g_tok_start, g_tok_end
+    = append_diagnostic msg, g_tok_file, g_tok_line, g_tok_start, g_tok_end
 ]
 
 fn fail_prev [str msg] int [
-    = fail_at msg, g_prev_line, g_prev_start, g_prev_end
+    = append_diagnostic msg, g_prev_file, g_prev_line, g_prev_start, g_prev_end
 ]
 
 fn fatal_at [str msg, int line, int start, int finish] int [
@@ -106,11 +96,15 @@ fn fatal_at [str msg, int line, int start, int finish] int [
 ]
 
 fn fatal [str msg] int [
-    = fatal_at msg, g_tok_line, g_tok_start, g_tok_end
+    fail msg
+    g_fatal_error = 1
+    = 0
 ]
 
 fn fatal_prev [str msg] int [
-    = fatal_at msg, g_prev_line, g_prev_start, g_prev_end
+    fail_prev msg
+    g_fatal_error = 1
+    = 0
 ]
 
 fn is_alpha [int c] int [
@@ -125,6 +119,7 @@ fn next_tok [int unused] int [
     g_prev_start = g_tok_start
     g_prev_end = g_tok_end
     g_prev_line = g_tok_line
+    g_prev_file = g_tok_file
 
     int n = str.len g_src
     while [g_pos lt n] [
@@ -134,14 +129,23 @@ fn next_tok [int unused] int [
             continue
         ]
         if [c eq 35] [
+            int comment_start = g_pos
             while [g_pos lt n and str.at g_src, g_pos ne 10] [
                 g_pos = g_pos add 1
+            ]
+            str comment = str.slice g_src, comment_start, g_pos
+            if [str.starts comment, '#@module '] [
+                g_source_file = str.slice comment, 9, str.len comment
+                # The marker line itself is synthetic. Reset to zero so the
+                # following newline advances the imported file to line one.
+                g_line = 0
             ]
             continue
         ]
 
         g_tok_start = g_pos
         g_tok_line = g_line
+        g_tok_file = g_source_file
 
         if [c eq 10] [
             g_pos = g_pos add 1
@@ -230,6 +234,7 @@ fn next_tok [int unused] int [
     g_tok_start = g_pos
     g_tok_end = g_pos
     g_tok_line = g_line
+    g_tok_file = g_source_file
     g_kind = 'eof'
     g_text = ''
     = 0
@@ -239,14 +244,17 @@ fn reset [str source] int [
     g_src = source
     g_pos = 0
     g_line = 1
+    g_source_file = ''
     g_kind = 'eof'
     g_text = ''
     g_tok_start = 0
     g_tok_end = 0
     g_tok_line = 1
+    g_tok_file = ''
     g_prev_start = 0
     g_prev_end = 0
     g_prev_line = 1
+    g_prev_file = ''
     = next_tok 0
 ]
 
@@ -279,4 +287,3 @@ fn expect_id [str text] int [
     next_tok 0
     = 1
 ]
-
