@@ -1,0 +1,65 @@
+# Compact indexed view over the serialized Lith IR arena.
+# The arena owns the text once; this table stores only record start offsets so
+# middle-end passes can revisit records without rescanning the whole function.
+
+fn ir_index_record_count [str code] int [
+    int n = str.len code
+    int i = 0
+    int count = 0
+    while [i lt n] [
+        if [str.at code, i eq 10] [ count = count add 1 ]
+        i = i add 1
+    ]
+    = count
+]
+
+fn ir_index_fill [str code, int count, ptr int starts] int [
+    int n = str.len code
+    int i = 0
+    int record = 0
+    starts[0] = 0
+    while [i lt n and record lt count] [
+        if [str.at code, i eq 10] [
+            record = record add 1
+            starts[record] = i add 1
+        ]
+        i = i add 1
+    ]
+    starts[count] = n
+    = 0
+]
+
+fn ir_index_line [str code, ptr int starts, int index] str [
+    int start = starts[index]
+    int next_index = index add 1
+    int stop = starts[next_index]
+    int last = stop sub 1
+    if [stop gt start and str.at code, last eq 10] [ stop = last ]
+    = str.slice code, start, stop
+]
+
+fn ir_index_field [str code, ptr int starts, int index, int wanted] str [
+    int start = starts[index]
+    int next_index = index add 1
+    int stop = starts[next_index]
+    int last = stop sub 1
+    if [stop gt start and str.at code, last eq 10] [ stop = last ]
+    int i = start
+    int field = 0
+    int field_start = start
+    while [i le stop] [
+        int boundary = 0
+        if [i eq stop] [ boundary = 1 ]
+        else [
+            if [str.at code, i eq 124] [ boundary = 1 ]
+        ]
+        if [boundary] [
+            if [field eq wanted] [ = str.slice code, field_start, i ]
+            field = field add 1
+            i = i add 1
+            field_start = i
+        ]
+        else [ i = i add 1 ]
+    ]
+    = ''
+]
