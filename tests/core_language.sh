@@ -66,6 +66,10 @@ check_compile_error \
     bad-implicit-pointer-cast \
     'type mismatch: expected ptr char, got ptr int'
 check_compile_error \
+    "$ROOT/tests/core/bad_pointer_compare.lith" \
+    bad-pointer-compare \
+    'operator eq does not support ptr int and ptr char'
+check_compile_error \
     "$ROOT/tests/core/bad_zero_call.lith" \
     bad-zero-call \
     'zero-argument call requires []'
