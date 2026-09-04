@@ -33,7 +33,8 @@ fn ir_ud_note_use [str uses, str value] str [
     str old = map_get uses, value
     int count = 0
     if [not str.eq old, ''] [ count = ir_parse_count_text old ]
-    str next = int.str count add 1
+    count = count add 1
+    str next = int.str count
     str out = map_put uses, value, next
     sys.free next
     = out
