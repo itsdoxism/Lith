@@ -18,6 +18,7 @@ SELF_MODULES := \
 	compiler/src/27_ir_index.lith \
 	compiler/src/27_ir_optimize.lith \
 	compiler/src/28_ir_cfg.lith \
+	compiler/src/29_ir_dom.lith \
 	compiler/src/backend/llvm/25_core.lith \
 	compiler/src/backend/llvm/26_ops.lith \
 	compiler/src/backend/llvm/27_lower.lith \
