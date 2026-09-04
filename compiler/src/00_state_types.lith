@@ -102,6 +102,7 @@ str g_prev_file = ''
 
 str g_out = ''
 str g_strings = ''
+str g_newline = '\n'
 int g_string_id = 0
 int g_temp = 0
 int g_label = 0
