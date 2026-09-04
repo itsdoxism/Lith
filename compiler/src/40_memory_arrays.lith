@@ -170,7 +170,8 @@ fn parse_array_literal_into [str addr, str array_type] int [
         else [ break ]
     ]
     expect_kind 'rb'
-    if [not str.eq int.str index, expected_count] [
+    str actual_count = int.str index
+    if [not str.eq actual_count, expected_count] [
         fail_prev 'array literal length does not match its fixed array type'
     ]
     = 0
@@ -284,4 +285,3 @@ fn parse_decl_ir [int unused] int [
     emit_inst st
     = 0
 ]
-
