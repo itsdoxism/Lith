@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import statistics
@@ -14,6 +15,12 @@ BUILD = BENCH / ".build"
 CASES = ("empty", "loop", "array", "alloc")
 RUNS = {"empty": 300, "loop": 30, "array": 30, "alloc": 30}
 COMPILE_RUNS = 8
+
+PROFILES = {
+    "baseline": (["-O2"], ["-O2"]),
+    "release": (["--release"], ["-O3"]),
+    "native": (["--release", "--native"], ["-O3", "-march=native"]),
+}
 
 
 def run(cmd, **kwargs):
@@ -40,7 +47,21 @@ def compile_median_ms(command_factory, repeats=COMPILE_RUNS):
     return statistics.median(samples)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Benchmark Lith against an equivalent C baseline")
+    parser.add_argument(
+        "--profile",
+        choices=tuple(PROFILES),
+        default="baseline",
+        help="backend optimization profile: baseline=-O2, release=-O3, native=-O3 -march=native",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
+    lith_flags, c_flags = PROFILES[args.profile]
+
     clang = shutil.which(os.environ.get("CLANG", "clang"))
     if not clang:
         raise SystemExit("clang is required")
@@ -57,8 +78,8 @@ def main():
         lith_bin = BUILD / f"{case}-lith"
         c_bin = BUILD / f"{case}-c"
 
-        run([str(ROOT / "bin/lith"), str(lith_src), "-o", str(lith_bin)])
-        run([clang, "-O2", str(c_src), "-o", str(c_bin)])
+        run([str(ROOT / "bin/lith"), str(lith_src), *lith_flags, "-o", str(lith_bin)])
+        run([clang, *c_flags, str(c_src), "-o", str(c_bin)])
 
         if case != "empty":
             lith_out = subprocess.check_output([lith_bin], cwd=ROOT)
@@ -70,13 +91,16 @@ def main():
         c_run = median_ms([str(c_bin)], RUNS[case])
 
         lith_full_compile = compile_median_ms(
-            lambda i: [str(ROOT / "bin/lith"), str(lith_src), "-o", str(BUILD / f"tmp-{case}-lith-{i}")]
+            lambda i: [
+                str(ROOT / "bin/lith"), str(lith_src), *lith_flags,
+                "-o", str(BUILD / f"tmp-{case}-lith-{i}"),
+            ]
         )
         lith_frontend = compile_median_ms(
             lambda i: [str(ROOT / "bin/lithc"), str(lith_src), str(BUILD / f"tmp-{case}-{i}.ll")]
         )
         c_compile = compile_median_ms(
-            lambda i: [clang, "-O2", str(c_src), "-o", str(BUILD / f"tmp-{case}-c-{i}")]
+            lambda i: [clang, *c_flags, str(c_src), "-o", str(BUILD / f"tmp-{case}-c-{i}")]
         )
 
         rows.append((
@@ -90,6 +114,7 @@ def main():
             c_bin.stat().st_size,
         ))
 
+    print(f"profile: {args.profile}")
     print("case   run Lith   run C     Lith/C   Lith compile  Lith->IR  C compile   size Lith  size C")
     print("-----  ---------  --------  -------  ------------  --------  ----------  ---------  ------")
     for row in rows:
@@ -98,9 +123,11 @@ def main():
 
     print("\nNotes:")
     print("- Runtime figures are median whole-process wall time, so startup is included.")
-    print("- Both Lith and C native binaries use clang -O2 on this machine.")
+    print(f"- Lith and C use the same backend optimization profile: {' '.join(c_flags)}.")
     print("- Lith full compile includes lithc plus the external clang backend.")
     print("- Lith->IR measures the self-hosted Lith frontend only.")
+    if args.profile == "native":
+        print("- native binaries are tuned for this CPU and are not intended to be portable to older CPUs.")
 
 
 if __name__ == "__main__":
