@@ -28,13 +28,15 @@ fn scan_struct [int unused] int [
         str smsg = str.concat 'duplicate struct: ', name
         fail smsg
     ]
+    # Register the name before its fields so recursive pointer fields can refer to it.
+    g_struct_counts = map_put g_struct_counts, name, '0'
     next_tok 0
     expect_kind 'lb'
     skip_nl 0
     int index = 0
     while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
         str typ = parse_type 0
-        if [str.eq typ, 'arr'] [ fail 'array struct fields are not supported yet' ]
+        if [str.eq typ, 'arr'] [ fail 'array struct fields require an explicit element type and length' ]
         str field = g_text
         str key = struct_key name, field
         str existing_field = map_get g_struct_types, key
@@ -45,6 +47,8 @@ fn scan_struct [int unused] int [
         next_tok 0
         g_struct_indices = map_put g_struct_indices, key, int.str index
         g_struct_types = map_put g_struct_types, key, typ
+        str ikey = struct_index_key name, index
+        g_struct_field_names = map_put g_struct_field_names, ikey, field
         index = index add 1
         skip_nl 0
     ]
@@ -67,7 +71,7 @@ fn scan_function [int unused] int [
     str param_names = ''
     while [not str.eq g_kind, 'rb' and g_fatal_error eq 0] [
         str typ = parse_type 0
-        if [str.eq typ, 'arr'] [ fail 'array parameters are not supported yet' ]
+        if [str.eq typ, 'arr'] [ fail 'array parameters require an explicit element type and length' ]
         str pname = g_text
         str seen_param = map_get param_names, pname
         if [not str.eq seen_param, ''] [
@@ -86,9 +90,8 @@ fn scan_function [int unused] int [
     expect_kind 'rb'
     str ret = 'int'
     if [str.eq g_kind, 'id'] [
-        ret = g_text
-        if [str.eq ret, 'arr'] [ fail 'array return types are not supported yet' ]
-        next_tok 0
+        ret = parse_type 0
+        if [str.eq ret, 'arr'] [ fail 'array return types require an explicit element type and length' ]
     ]
     g_fn_ret = map_put g_fn_ret, name, ret
     g_fn_argc = map_put g_fn_argc, name, int.str argc
@@ -104,7 +107,7 @@ fn scan_global [int unused] int [
         str dmsg = str.concat 'duplicate global: ', name
         fail dmsg
     ]
-    if [str.eq typ, 'arr'] [ fail 'global arrays are not supported yet' ]
+    if [str.eq typ, 'arr'] [ fail 'global arrays require an explicit element type and length' ]
     next_tok 0
     expect_kind 'assign'
     g_globals = map_put g_globals, name, typ
@@ -120,6 +123,7 @@ fn scan_top [str source] int [
     g_struct_counts = ''
     g_struct_indices = ''
     g_struct_types = ''
+    g_struct_field_names = ''
     reset source
     skip_nl 0
     while [not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
@@ -132,7 +136,7 @@ fn scan_top [str source] int [
             else [
                 if [str.eq g_kind, 'id' and str.eq g_text, 'fn'] [ scan_function 0 ]
                 else [
-                    if [str.eq g_kind, 'id' and is_decl_type g_text] [ scan_global 0 ]
+                    if [str.eq g_kind, 'id' and is_type_start g_text] [ scan_global 0 ]
                     else [ = fatal 'unsupported top level item' ]
                 ]
             ]
