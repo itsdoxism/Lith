@@ -1,0 +1,6 @@
+use '../../modules/math.lith'
+
+fn main [] int [
+    if [imported_value [] ne 21] [ = 1 ]
+    = 0
+]
