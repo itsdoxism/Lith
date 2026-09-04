@@ -79,7 +79,9 @@ driver-check: compiler
 	$(BUILD)/driver-structs
 	sh bin/lith tests/selfhost_arrays.lith -o $(BUILD)/driver-arrays
 	$(BUILD)/driver-arrays
-	@echo 'Native Lith driver + memory + struct + array parity: passed'
+	sh bin/lith tests/selfhost_operators.lith -o $(BUILD)/driver-operators
+	$(BUILD)/driver-operators
+	@echo 'Native Lith driver + memory + struct + array + operator parity: passed'
 
 semantic-check: compiler
 	sh tests/semantic_errors.sh
