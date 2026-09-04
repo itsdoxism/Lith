@@ -4,13 +4,26 @@ Luna is an experimental **zero-shift programming language** built around ergonom
 
 ## Current status
 
-This repository now contains a working Stage-0 compiler:
+Luna now has a **self-hosting bootstrap compiler**.
+
+The trusted Stage-0 compiler is still `compiler/lunac.py`, but the compiler implementation also exists in Luna as `compiler/lunac.luna`:
 
 ```text
-.luna source -> compiler/lunac.py -> generated C -> native executable
+compiler/lunac.luna
+        |
+        v
+Stage 0 (Python) -> stage1 C -> native lunac-stage1
+                                |
+                                v
+                         stage2 C -> lunac-stage2
+                                |
+                                v
+                         stage3 C -> lunac-stage3
 ```
 
-The compiler currently handles the core language used by the reference program: functions, structs, typed variables, pointer allocation helpers, member/index access, arrays, textual operators, `while`, `loop`, match-style `if`/`is`/`else`, no-parentheses function calls, and string interpolation for `io.print`.
+The self-host test then compiles the compiler one more time and verifies that Stage 2, Stage 3, and Stage 4 generated C are byte-for-byte identical. That fixed point is the bootstrap proof that the Luna compiler can compile its own source.
+
+The self-hosted compiler currently implements the **bootstrap subset** needed to compile itself: globals, functions, typed parameters and returns, string/int/bool expressions, textual operators, calls, indexing, `if`/`else`, `while`, `break`, `continue`, file I/O, and bootstrap string helpers. Stage 0 still supports some features that have not yet been ported into the self-hosted compiler, including the complete reference-program surface such as structs, arrays, match expressions, and allocation helpers.
 
 ## Try it
 
@@ -20,16 +33,26 @@ Requirements: Python 3.10+ and a C11 compiler.
 make test
 ```
 
-Or compile manually:
+`make test` runs both the existing executable language reference and the self-hosting fixed-point proof.
+
+To run only the bootstrap proof:
 
 ```sh
-python3 compiler/lunac.py examples/reference.luna build/reference.c
-cc -std=c11 -Wall -Wextra -Wpedantic -Werror build/reference.c -o build/reference
-./build/reference
+make selfhost
+```
+
+## Repository layout
+
+```text
+compiler/lunac.py       trusted Stage-0 bootstrap compiler
+compiler/lunac.luna     self-hosted Luna compiler
+runtime/                 small C runtime used by generated programs
+tests/self_host.sh      Stage 1 -> 2 -> 3 -> 4 fixed-point test
+examples/reference.luna broader Stage-0 language reference
 ```
 
 ## Direction
 
-The compiler is intentionally staged. Stage 0 is a small trusted bootstrap compiler. The long-term target is self-hosting: implement the compiler in Luna, compile it with Stage 0, then compile that compiler with itself and compare the stages.
+Self-hosting is no longer the future target; it is working now. The next compiler milestone is **feature parity**: move the remaining Stage-0-only language features into `compiler/lunac.luna`, then shrink the Python bootstrap compiler until it is only needed for the initial bootstrap chain.
 
-See `docs/LANGUAGE.md` for the current language notes.
+See `docs/LANGUAGE.md` and `docs/SELF_HOSTING.md` for details.
