@@ -20,6 +20,8 @@ stage2.ll == stage3.ll == stage4.ll
 
 That is the executable bootstrap proof that the Luna-written compiler can reproduce itself.
 
+The self-hosted LLVM compiler now also supports the first broader feature-parity slice: typed pointers, pointer indexing, and `sys.alloc`, `sys.realloc`, and `sys.free`. Allocation sizes are derived from the declared pointer element type in generated LLVM IR rather than using a fixed byte multiplier.
+
 ## Build the compiler
 
 Requirements:
@@ -82,7 +84,7 @@ Run the LLVM self-host fixed-point proof:
 make llvm-selfhost
 ```
 
-Run the user-facing native driver smoke test:
+Run the user-facing native driver and pointer-memory smoke test:
 
 ```sh
 make driver-check
@@ -108,15 +110,18 @@ runtime/luna_runtime.ll               current LLVM runtime module
 tests/self_host.sh                    legacy C emitter fixed-point proof
 tests/llvm_backend.sh                 LLVM backend transition/runtime checks
 tests/llvm_self_host.sh               LLVM emitter fixed-point proof
+tests/selfhost_memory.luna            pointer allocation/reallocation/free fixture
 examples/reference.luna               executable language reference
 ```
 
 ## Next milestones
 
-1. close feature-parity gaps in the self-hosted LLVM compiler (`struct`, arrays, match, allocation helpers and the remaining broader Stage-0 surface),
-2. consolidate the split bootstrap source into the canonical Luna compiler source,
-3. reduce Python to a bootstrap-only recovery artifact,
-4. grow the standard library/runtime surface,
-5. optionally add object-file or direct machine-code emission later if Luna should stop depending on LLVM for final code generation too.
+1. continue self-hosted LLVM feature parity with `struct` + member access,
+2. add array literals/iteration and `match`,
+3. add the full `io.print` interpolation surface,
+4. consolidate the split bootstrap source into the canonical Luna compiler source,
+5. reduce Python to a bootstrap-only recovery artifact,
+6. grow the standard library/runtime surface,
+7. optionally add object-file or direct machine-code emission later if Luna should stop depending on LLVM for final code generation too.
 
 See `docs/LANGUAGE.md` and `docs/SELF_HOSTING.md` for the language and bootstrap notes.

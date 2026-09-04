@@ -1,0 +1,16 @@
+use sys
+
+fn main [] int [
+    ptr int values = sys.alloc 4
+    values[0] = 7
+    values[1] = 9
+
+    values = sys.realloc values, 8
+    values[2] = 11
+
+    int ok = values[0] eq 7 and values[1] eq 9 and values[2] eq 11
+    sys.free values
+
+    if [ok] [ = 0 ]
+    = 1
+]
