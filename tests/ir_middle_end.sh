@@ -70,7 +70,7 @@ fi
 # Keep the validator wired before and after optimization. This catches an
 # accidental bypass even though ordinary source cannot directly construct
 # malformed internal records.
-grep -q 'ir_validate_function g_ir_code' compiler/src/25_ir.lith
+grep -q 'ir_validate_function raw' compiler/src/25_ir.lith
 grep -q 'ir_validate_function optimized' compiler/src/25_ir.lith
 grep -q 'ir_index_record_count' compiler/src/27_ir_index.lith
 grep -q 'ir_index_fill' compiler/src/27_ir_index.lith
