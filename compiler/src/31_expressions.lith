@@ -41,14 +41,17 @@ fn emit_call [str name] str [
     int index = 0
     int first = 1
 
-    if [str.eq expected, '0' and str.eq g_kind, 'lb'] [
-        next_tok 0
-        if [str.eq g_kind, 'rb'] [ next_tok 0 ]
-        else [
-            fail 'zero-argument call marker must be empty'
-            while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [ next_tok 0 ]
+    if [str.eq expected, '0'] [
+        if [str.eq g_kind, 'lb'] [
+            next_tok 0
             if [str.eq g_kind, 'rb'] [ next_tok 0 ]
+            else [
+                fail 'zero-argument call marker must be empty'
+                while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [ next_tok 0 ]
+                if [str.eq g_kind, 'rb'] [ next_tok 0 ]
+            ]
         ]
+        else [ fail_prev 'zero-argument call requires []' ]
     ]
     else [
         while [starts_expr 0] [
@@ -109,100 +112,117 @@ fn parse_postfix_value [str initial_value, str initial_type, str initial_addr] s
     str current_type = initial_type
     str current_addr = initial_addr
 
-    while [str.eq g_kind, 'lb'] [
-        next_tok 0
-        str idx = parse_expr 0
-        str it = g_expr_type
-        if [not str.eq it, 'int' and not str.eq it, 'char'] [
-            str imsg = str.concat 'array or pointer index must be int, got ', it
-            fail_prev imsg
-            idx = '0'
-        ]
-        else [ idx = intify idx, it ]
-        expect_kind 'rb'
-        str elem = ''
-        str gep = new_reg 0
-        str gs = ''
-        if [str.starts current_type, 'ptr '] [
-            elem = str.slice current_type, 4, str.len current_type
-            gs = str.concat gep, ' = getelementptr inbounds '
-            gs = str.concat gs, storage_type elem
-            gs = str.concat gs, ', ptr '
-            gs = str.concat gs, value
-            gs = str.concat gs, ', i32 '
-            gs = str.concat gs, idx
-        ]
-        else [
-            if [str.starts current_type, 'arr '] [
-                elem = array_elem_type current_type
-                if [str.eq current_addr, ''] [
-                    fail_prev 'array indexing requires an addressable array value'
-                    = value
-                ]
+    while [str.eq g_kind, 'lb' or str.eq g_kind, 'dot'] [
+        if [str.eq g_kind, 'lb'] [
+            next_tok 0
+            str idx = parse_expr 0
+            str it = g_expr_type
+            if [not str.eq it, 'int' and not str.eq it, 'char'] [
+                str imsg = str.concat 'array or pointer index must be int, got ', it
+                fail_prev imsg
+                idx = '0'
+            ]
+            else [ idx = intify idx, it ]
+            expect_kind 'rb'
+
+            str elem = ''
+            str gep = new_reg 0
+            str gs = ''
+            if [str.starts current_type, 'ptr '] [
+                elem = str.slice current_type, 4, str.len current_type
                 gs = str.concat gep, ' = getelementptr inbounds '
-                gs = str.concat gs, storage_type current_type
+                gs = str.concat gs, storage_type elem
                 gs = str.concat gs, ', ptr '
-                gs = str.concat gs, current_addr
-                gs = str.concat gs, ', i32 0, i32 '
+                gs = str.concat gs, value
+                gs = str.concat gs, ', i32 '
                 gs = str.concat gs, idx
             ]
             else [
-                fail_prev 'indexing requires an array or pointer'
+                if [str.starts current_type, 'arr '] [
+                    elem = array_elem_type current_type
+                    if [str.eq current_addr, ''] [
+                        fail_prev 'array indexing requires an addressable array value'
+                        = value
+                    ]
+                    gs = str.concat gep, ' = getelementptr inbounds '
+                    gs = str.concat gs, storage_type current_type
+                    gs = str.concat gs, ', ptr '
+                    gs = str.concat gs, current_addr
+                    gs = str.concat gs, ', i32 0, i32 '
+                    gs = str.concat gs, idx
+                ]
+                else [
+                    fail_prev 'indexing requires an array or pointer'
+                    = value
+                ]
+            ]
+            emit_inst gs
+            str loaded = new_reg 0
+            str ls = str.concat loaded, ' = load '
+            ls = str.concat ls, storage_type elem
+            ls = str.concat ls, ', ptr '
+            ls = str.concat ls, gep
+            emit_inst ls
+            value = loaded
+            current_type = elem
+            current_addr = gep
+        ]
+        else [
+            next_tok 0
+            if [not str.eq g_kind, 'id'] [
+                fatal 'expected struct field'
                 = value
             ]
-        ]
-        emit_inst gs
-        str loaded = new_reg 0
-        str ls = str.concat loaded, ' = load '
-        ls = str.concat ls, storage_type elem
-        ls = str.concat ls, ', ptr '
-        ls = str.concat ls, gep
-        emit_inst ls
-        value = loaded
-        current_type = elem
-        current_addr = gep
-    ]
+            str field = g_text
+            next_tok 0
 
-    while [str.eq g_kind, 'dot'] [
-        next_tok 0
-        if [not str.eq g_kind, 'id'] [
-            fatal 'expected struct field'
-            = value
+            str struct_type = current_type
+            str struct_addr = current_addr
+            if [str.starts current_type, 'ptr '] [
+                str pointee = str.slice current_type, 4, str.len current_type
+                if [not is_struct_type pointee] [
+                    fail_prev 'member access requires a struct or pointer-to-struct value'
+                    = value
+                ]
+                struct_type = pointee
+                struct_addr = value
+            ]
+            else [
+                if [not is_struct_type struct_type] [
+                    fail_prev 'member access requires a struct or pointer-to-struct value'
+                    = value
+                ]
+                if [str.eq struct_addr, ''] [
+                    fail_prev 'member access requires an addressable struct value'
+                    = value
+                ]
+            ]
+
+            str field_index = struct_field_index struct_type, field
+            str field_type = struct_field_type struct_type, field
+            if [str.eq field_index, '' or str.eq field_type, ''] [
+                str fmsg = str.concat 'unknown struct field: ', field
+                fail_prev fmsg
+                = value
+            ]
+            str field_addr = new_reg 0
+            str fs = str.concat field_addr, ' = getelementptr inbounds '
+            fs = str.concat fs, storage_type struct_type
+            fs = str.concat fs, ', ptr '
+            fs = str.concat fs, struct_addr
+            fs = str.concat fs, ', i32 0, i32 '
+            fs = str.concat fs, field_index
+            emit_inst fs
+            str field_value = new_reg 0
+            str fl = str.concat field_value, ' = load '
+            fl = str.concat fl, storage_type field_type
+            fl = str.concat fl, ', ptr '
+            fl = str.concat fl, field_addr
+            emit_inst fl
+            value = field_value
+            current_type = field_type
+            current_addr = field_addr
         ]
-        str field = g_text
-        next_tok 0
-        if [not is_struct_type current_type] [
-            fail_prev 'member access requires a struct value'
-            = value
-        ]
-        if [str.eq current_addr, ''] [
-            fail_prev 'member access requires an addressable struct value'
-            = value
-        ]
-        str field_index = struct_field_index current_type, field
-        str field_type = struct_field_type current_type, field
-        if [str.eq field_index, '' or str.eq field_type, ''] [
-            str fmsg = str.concat 'unknown struct field: ', field
-            fail_prev fmsg
-            = value
-        ]
-        str field_addr = new_reg 0
-        str fs = str.concat field_addr, ' = getelementptr inbounds '
-        fs = str.concat fs, storage_type current_type
-        fs = str.concat fs, ', ptr '
-        fs = str.concat fs, current_addr
-        fs = str.concat fs, ', i32 0, i32 '
-        fs = str.concat fs, field_index
-        emit_inst fs
-        str field_value = new_reg 0
-        str fl = str.concat field_value, ' = load '
-        fl = str.concat fl, storage_type field_type
-        fl = str.concat fl, ', ptr '
-        fl = str.concat fl, field_addr
-        emit_inst fl
-        value = field_value
-        current_type = field_type
-        current_addr = field_addr
     ]
 
     g_expr_type = current_type
@@ -268,7 +288,10 @@ fn parse_primary [int unused] str [
         = 'null'
     ]
     if [str.eq g_kind, 'id' and str.eq g_text, 'match'] [
-        = emit_match_expr 0
+        str matched = emit_match_expr 0
+        str matched_type = g_expr_type
+        str matched_addr = g_expr_addr
+        = parse_postfix_value matched, matched_type, matched_addr
     ]
     if [str.eq g_kind, 'id' and str.eq g_text, 'not'] [
         next_tok 0
