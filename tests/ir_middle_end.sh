@@ -67,12 +67,15 @@ if [ "$rc" -ne 5 ]; then
     exit 1
 fi
 
-# Keep the validator wired before and after optimization. This catches an
-# accidental bypass even though ordinary source cannot directly construct
-# malformed internal records.
+# Keep validation wired at the raw IR boundary and after every optimization
+# stage. This catches accidental pass-manager bypasses even though ordinary
+# source cannot directly construct malformed internal records.
 grep -q 'ir_validate_function raw' compiler/src/25_ir.lith
-grep -q 'ir_validate_function optimized' compiler/src/25_ir.lith
+grep -q 'fn ir_run_optimization_pipeline' compiler/src/25_ir.lith
+grep -q 'ir_validate_function current' compiler/src/25_ir.lith
+grep -q 'ir_validate_function next' compiler/src/25_ir.lith
+grep -q 'ir_run_optimization_pipeline raw' compiler/src/25_ir.lith
 grep -q 'ir_index_record_count' compiler/src/27_ir_index.lith
 grep -q 'ir_index_fill' compiler/src/27_ir_index.lith
 
-echo 'Lith IR validator + optimizer: passed'
+echo 'Lith IR validator + verified optimizer pipeline: passed'
