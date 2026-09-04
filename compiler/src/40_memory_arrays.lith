@@ -128,18 +128,25 @@ fn parse_array_literal_into [str addr, str array_type] int [
     str expected_count = array_count_text array_type
     expect_kind 'lb'
     int index = 0
-    int too_many = 0
+    int overflowed = 0
     while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
         str index_text = int.str index
-        int in_range = not str.eq index_text, expected_count
+        int in_range = 1
+        if [overflowed] [ in_range = 0 ]
+        else [
+            if [str.eq index_text, expected_count] [
+                in_range = 0
+                overflowed = 1
+                fail 'too many values in array literal'
+            ]
+        ]
+
         str elem_addr = ''
         if [in_range] [ elem_addr = emit_array_element_addr addr, array_type, index_text ]
 
         if [str.starts elem_type, 'arr ' and str.eq g_kind, 'lb'] [
             if [in_range] [ parse_array_literal_into elem_addr, elem_type ]
             else [
-                if [too_many eq 0] [ fail 'too many values in array literal' ]
-                too_many = 1
                 str dummy = new_reg 0
                 str da = str.concat dummy, ' = alloca '
                 da = str.concat da, storage_type elem_type
@@ -155,10 +162,6 @@ fn parse_array_literal_into [str addr, str array_type] int [
                 value = checked_cast value, value_type, elem_type
                 value = materialize_array_value value, elem_type, value_addr
                 store_typed_value elem_addr, elem_type, value
-            ]
-            else [
-                if [too_many eq 0] [ fail_prev 'too many values in array literal' ]
-                too_many = 1
             ]
         ]
 
@@ -176,7 +179,6 @@ fn parse_array_literal_into [str addr, str array_type] int [
 fn parse_inferred_array_decl_ir [str name] int [
     expect_kind 'lb'
     str values = ''
-    str value_addrs = ''
     str elem_type = ''
     int count = 0
     while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
@@ -195,7 +197,6 @@ fn parse_inferred_array_decl_ir [str name] int [
         value = materialize_array_value value, elem_type, value_addr
         str key = int.str count
         values = map_put values, key, value
-        value_addrs = map_put value_addrs, key, value_addr
         count = count add 1
         if [str.eq g_kind, 'comma'] [ next_tok 0 ]
         else [ break ]
