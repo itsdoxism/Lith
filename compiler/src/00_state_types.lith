@@ -2,10 +2,16 @@
 str g_struct_counts = ''
 str g_struct_indices = ''
 str g_struct_types = ''
+str g_struct_field_names = ''
 
 fn struct_key [str name, str field] str [
     str r = str.concat name, '@'
     = str.concat r, field
+]
+
+fn struct_index_key [str name, int index] str [
+    str r = str.concat name, '@'
+    = str.concat r, int.str index
 ]
 
 fn is_struct_type [str typ] int [
@@ -14,7 +20,10 @@ fn is_struct_type [str typ] int [
     = 1
 ]
 
-fn array_elem_type [str typ] str [
+# Internal array encoding is: arr <count> <element-type>.
+# Keeping the count first makes nested arrays unambiguous because the
+# element type consumes the remainder of the string recursively.
+fn array_count_text [str typ] str [
     if [not str.starts typ, 'arr '] [ = '' ]
     int n = str.len typ
     int i = 4
@@ -23,7 +32,7 @@ fn array_elem_type [str typ] str [
     = str.slice typ, 4, i
 ]
 
-fn array_count_text [str typ] str [
+fn array_elem_type [str typ] str [
     if [not str.starts typ, 'arr '] [ = '' ]
     int n = str.len typ
     int i = 4
@@ -57,6 +66,12 @@ fn struct_field_type [str name, str field] str [
     str key = struct_key name, field
     = map_get g_struct_types, key
 ]
+
+fn struct_field_name [str name, int index] str [
+    str key = struct_index_key name, index
+    = map_get g_struct_field_names, key
+]
+
 # Luna LLVM compiler bootstrap subset, written in Luna.
 # This compiler emits typed LLVM IR directly for the subset needed to compile itself.
 use io
