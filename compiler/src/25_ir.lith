@@ -1,0 +1,429 @@
+# Lith typed IR builder.
+#
+# Function bodies are stored as target-neutral typed records and lowered only
+# after parsing/type checking finishes. Record fields use `|`; call/phi lists
+# use `;` with `~` between pair elements. Source-level values never carry raw
+# string contents here: literals are opaque $s:<id> handles, so the separators
+# cannot collide with an operand.
+
+str g_ir_code = ''
+int g_ir_code_owned = 0
+int g_ir_count = 0
+str g_ir_function_name = ''
+str g_ir_function_ret = 'int'
+str g_ir_function_params = ''
+int g_ir_function_param_count = 0
+
+fn ir_append_owned [str buffer, str text] str [
+    str next = str.concat buffer, text
+    sys.free buffer
+    = next
+]
+
+fn ir_arg_pair [str typ, str value] str [
+    str out = str.concat typ, '~'
+    out = str.concat out, value
+    = str.concat out, ';'
+]
+
+fn ir_args_add [str args, int index, str typ, str value] str [
+    str pair = ir_arg_pair typ, value
+    = str.concat args, pair
+]
+
+fn ir_list_item [str list, int wanted] str [
+    int n = str.len list
+    int i = 0
+    int index = 0
+    while [i lt n] [
+        int start = i
+        while [i lt n and str.at list, i ne 59] [ i = i add 1 ]
+        if [index eq wanted] [ = str.slice list, start, i ]
+        if [i lt n] [ i = i add 1 ]
+        index = index add 1
+    ]
+    = ''
+]
+
+fn ir_pair_left [str pair] str [
+    int n = str.len pair
+    int i = 0
+    while [i lt n and str.at pair, i ne 126] [ i = i add 1 ]
+    = str.slice pair, 0, i
+]
+
+fn ir_pair_right [str pair] str [
+    int n = str.len pair
+    int i = 0
+    while [i lt n and str.at pair, i ne 126] [ i = i add 1 ]
+    if [i ge n] [ = '' ]
+    int start = i add 1
+    = str.slice pair, start, n
+]
+
+fn ir_arg_type [str args, int index] str [
+    str pair = ir_list_item args, index
+    = ir_pair_left pair
+]
+
+fn ir_arg_value [str args, int index] str [
+    str pair = ir_list_item args, index
+    = ir_pair_right pair
+]
+
+fn ir_param_key [int index, str field] str [
+    str key = int.str index
+    key = str.concat key, '@'
+    = str.concat key, field
+]
+
+fn ir_params_add [str params, int index, str typ, str name] str [
+    str type_key = ir_param_key index, 'type'
+    str name_key = ir_param_key index, 'name'
+    params = map_put params, type_key, typ
+    = map_put params, name_key, name
+]
+
+fn ir_param_type [str params, int index] str [
+    str key = ir_param_key index, 'type'
+    = map_get params, key
+]
+
+fn ir_param_name [str params, int index] str [
+    str key = ir_param_key index, 'name'
+    = map_get params, key
+]
+
+fn ir_field_key [int index] str [ = int.str index ]
+
+fn ir_fields_add [str fields, int index, str typ] str [
+    str key = ir_field_key index
+    = map_put fields, key, typ
+]
+
+fn ir_field_type_at [str fields, int index] str [
+    str key = ir_field_key index
+    = map_get fields, key
+]
+
+fn ir_record [str op, str a, str b, str c, str d, str e] int [
+    str line = str.slice '', 0, 0
+    line = ir_append_owned line, op
+    line = ir_append_owned line, '|'
+    line = ir_append_owned line, a
+    line = ir_append_owned line, '|'
+    line = ir_append_owned line, b
+    line = ir_append_owned line, '|'
+    line = ir_append_owned line, c
+    line = ir_append_owned line, '|'
+    line = ir_append_owned line, d
+    line = ir_append_owned line, '|'
+    line = ir_append_owned line, e
+    line = ir_append_owned line, g_newline
+    g_ir_code = ir_append_owned g_ir_code, line
+    sys.free line
+    int index = g_ir_count
+    g_ir_count = g_ir_count add 1
+    = index
+]
+
+fn ir_record_field [str line, int wanted] str [
+    int n = str.len line
+    int i = 0
+    int field = 0
+    int start = 0
+    while [i le n] [
+        int boundary = 0
+        if [i eq n] [ boundary = 1 ]
+        else [
+            if [str.at line, i eq 124] [ boundary = 1 ]
+        ]
+        if [boundary] [
+            if [field eq wanted] [ = str.slice line, start, i ]
+            field = field add 1
+            i = i add 1
+            start = i
+        ]
+        else [ i = i add 1 ]
+    ]
+    = ''
+]
+
+fn ir_new_value [int unused] str [
+    g_temp = g_temp add 1
+    = str.concat '$v', int.str g_temp
+]
+
+fn ir_new_label [str prefix] str [
+    g_label = g_label add 1
+    str out = str.concat prefix, '.'
+    = str.concat out, int.str g_label
+]
+
+fn ir_global_addr [str name] str [ = str.concat '$g:', name ]
+fn ir_param_value [str name] str [ = str.concat '$p:', name ]
+
+fn ir_ensure_live [int unused] int [
+    if [g_terminated] [
+        str dead = ir_new_label 'dead'
+        ir_label dead
+    ]
+    = 0
+]
+
+fn ir_record_inst [str op, str a, str b, str c, str d, str e] int [
+    ir_ensure_live 0
+    = ir_record op, a, b, c, d, e
+]
+
+fn ir_label [str name] int [
+    ir_record 'label', name, '', '', '', ''
+    g_current_label = name
+    g_terminated = 0
+    = 0
+]
+
+fn ir_branch [str label] int [
+    ir_record 'branch', label, '', '', '', ''
+    g_terminated = 1
+    = 0
+]
+
+fn ir_cbranch [str cond, str yes, str no] int [
+    ir_record 'cbranch', cond, yes, no, '', ''
+    g_terminated = 1
+    = 0
+]
+
+fn ir_unreachable [int unused] int [
+    ir_record 'unreachable', '', '', '', '', ''
+    g_terminated = 1
+    = 0
+]
+
+fn ir_stack_alloc [str typ] str [
+    str out = ir_new_value 0
+    ir_record_inst 'stack_alloc', out, typ, '', '', ''
+    = out
+]
+
+fn ir_load [str typ, str addr] str [
+    str out = ir_new_value 0
+    ir_record_inst 'load', out, typ, addr, '', ''
+    = out
+]
+
+fn ir_store [str typ, str value, str addr] int [ = ir_record_inst 'store', typ, value, addr, '', '' ]
+
+fn ir_array_addr [str array_type, str addr, str index] str [
+    str out = ir_new_value 0
+    ir_record_inst 'array_addr', out, array_type, addr, index, ''
+    = out
+]
+
+fn ir_pointer_addr [str elem_type, str ptr, str index] str [
+    str out = ir_new_value 0
+    ir_record_inst 'pointer_addr', out, elem_type, ptr, index, ''
+    = out
+]
+
+fn ir_field_addr [str struct_type, str addr, str field_index] str [
+    str out = ir_new_value 0
+    ir_record_inst 'field_addr', out, struct_type, addr, field_index, ''
+    = out
+]
+
+fn ir_truthy_pointer [str value] str [
+    str out = ir_new_value 0
+    ir_record_inst 'truthy_pointer', out, value, '', '', ''
+    = out
+]
+
+fn ir_truthy_float [str value] str [
+    str out = ir_new_value 0
+    ir_record_inst 'truthy_float', out, value, '', '', ''
+    = out
+]
+
+fn ir_truthy_int [str value] str [
+    str out = ir_new_value 0
+    ir_record_inst 'truthy_int', out, value, '', '', ''
+    = out
+]
+
+fn ir_not_bool [str value] str [
+    str out = ir_new_value 0
+    ir_record_inst 'not_bool', out, value, '', '', ''
+    = out
+]
+
+fn ir_bool_to_int [str value] str [
+    str out = ir_new_value 0
+    ir_record_inst 'bool_to_int', out, value, '', '', ''
+    = out
+]
+
+fn ir_int_to_float [str value] str [
+    str out = ir_new_value 0
+    ir_record_inst 'int_to_float', out, value, '', '', ''
+    = out
+]
+
+fn ir_bool_to_float [str value] str [
+    str out = ir_new_value 0
+    ir_record_inst 'bool_to_float', out, value, '', '', ''
+    = out
+]
+
+fn ir_float_to_int [str value] str [
+    str out = ir_new_value 0
+    ir_record_inst 'float_to_int', out, value, '', '', ''
+    = out
+]
+
+fn ir_logic [str op, str left, str right] str [
+    str out = ir_new_value 0
+    ir_record_inst 'logic', out, op, left, right, ''
+    = out
+]
+
+fn ir_compare_int [str op, str left, str right] str [
+    str out = ir_new_value 0
+    ir_record_inst 'compare_int', out, op, left, right, ''
+    = out
+]
+
+fn ir_compare_bool [str op, str left, str right] str [
+    str out = ir_new_value 0
+    ir_record_inst 'compare_bool', out, op, left, right, ''
+    = out
+]
+
+fn ir_compare_pointer [str op, str left, str right] str [
+    str out = ir_new_value 0
+    ir_record_inst 'compare_pointer', out, op, left, right, ''
+    = out
+]
+
+fn ir_compare_float [str op, str left, str right] str [
+    str out = ir_new_value 0
+    ir_record_inst 'compare_float', out, op, left, right, ''
+    = out
+]
+
+fn ir_arith_int [str op, str left, str right] str [
+    str out = ir_new_value 0
+    ir_record_inst 'arith_int', out, op, left, right, ''
+    = out
+]
+
+fn ir_arith_float [str op, str left, str right] str [
+    str out = ir_new_value 0
+    ir_record_inst 'arith_float', out, op, left, right, ''
+    = out
+]
+
+fn ir_call [str ret_type, str name, str args, int count] str [
+    str out = ir_new_value 0
+    str count_text = int.str count
+    ir_record_inst 'call', out, ret_type, name, count_text, args
+    = out
+]
+
+fn ir_phi [str typ, str values, str predecessors, int count] str [
+    str payload = ''
+    int i = 0
+    while [i lt count] [
+        str key = int.str i
+        str value = map_get values, key
+        str pred = map_get predecessors, key
+        str pair = ir_arg_pair value, pred
+        payload = str.concat payload, pair
+        i = i add 1
+    ]
+    str out = ir_new_value 0
+    str count_text = int.str count
+    ir_record_inst 'phi', out, typ, count_text, '', payload
+    = out
+]
+
+fn ir_return [str typ, str value] int [
+    ir_record 'return', typ, value, '', '', ''
+    g_terminated = 1
+    = 0
+]
+
+fn ir_alloc [str target_type, str count] str [
+    str out = ir_new_value 0
+    ir_record_inst 'alloc', out, target_type, count, '', ''
+    = out
+]
+
+fn ir_realloc [str target_type, str old, str count] str [
+    str out = ir_new_value 0
+    ir_record_inst 'realloc', out, target_type, old, count, ''
+    = out
+]
+
+fn ir_free [str value] int [ = ir_record_inst 'free', value, '', '', '', '' ]
+fn ir_print_line [str value] int [ = ir_record_inst 'print_line', value, '', '', '', '' ]
+
+fn ir_string_const [str text] str [
+    int id = g_string_id
+    g_string_id = g_string_id add 1
+    backend_register_string id, text
+    = str.concat '$s:', int.str id
+]
+
+fn ir_default_value [str typ] str [
+    if [str.eq typ, 'str'] [ = 'null' ]
+    if [str.starts typ, 'ptr '] [ = 'null' ]
+    if [str.eq typ, 'float'] [ = '0.0' ]
+    if [is_aggregate_type typ] [ = '$zero' ]
+    = '0'
+]
+
+fn ir_const_array [str typ, str values, int count] str [ = backend_const_array typ, values, count ]
+fn ir_const_struct [str typ, str values, int count] str [ = backend_const_struct typ, values, count ]
+
+fn ir_module_begin [int unused] int [ = backend_module_begin 0 ]
+fn ir_struct_decl [str name, str fields, int count] int [ = backend_struct_decl name, fields, count ]
+fn ir_global_decl [str name, str typ, str value] int [ = backend_global_decl name, typ, value ]
+
+fn ir_begin_function [str name, str ret, str params, int count] int [
+    if [g_ir_code_owned] [ sys.free g_ir_code ]
+    g_ir_code = str.slice '', 0, 0
+    g_ir_code_owned = 1
+    g_ir_count = 0
+    g_ir_function_name = name
+    g_ir_function_ret = ret
+    g_ir_function_params = params
+    g_ir_function_param_count = count
+    g_current_label = 'entry'
+    g_terminated = 0
+    = 0
+]
+
+fn ir_end_function [int unused] int [
+    backend_begin_function g_ir_function_name, g_ir_function_ret, g_ir_function_params, g_ir_function_param_count
+    int n = str.len g_ir_code
+    int i = 0
+    while [i lt n] [
+        int start = i
+        while [i lt n and str.at g_ir_code, i ne 10] [ i = i add 1 ]
+        str line = str.slice g_ir_code, start, i
+        backend_lower_record line
+        sys.free line
+        if [i lt n] [ i = i add 1 ]
+    ]
+    backend_end_function 0
+    = 0
+]
+
+fn ir_module_finish [int unused] str [ = backend_module_finish 0 ]
+
+fn materialize_array_value [str op, str typ, str addr] str [
+    if [not str.starts typ, 'arr '] [ = op ]
+    if [str.eq addr, ''] [ = op ]
+    = ir_load typ, addr
+]

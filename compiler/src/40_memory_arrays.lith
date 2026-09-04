@@ -5,22 +5,6 @@ fn pointee_type [str typ] str [
     = 'int'
 ]
 
-fn emit_alloc_size [str target_type, str count] str [
-    str elem = pointee_type target_type
-    str sizeptr = new_reg 0
-    str gs = str.concat sizeptr, ' = getelementptr '
-    gs = str.concat gs, storage_type elem
-    gs = str.concat gs, ', ptr null, i32 '
-    gs = str.concat gs, count
-    emit_inst gs
-    str bytes = new_reg 0
-    str ps = str.concat bytes, ' = ptrtoint ptr '
-    ps = str.concat ps, sizeptr
-    ps = str.concat ps, ' to i64'
-    emit_inst ps
-    = bytes
-]
-
 fn emit_sys_memory [str target_type] str [
     expect_id 'sys'
     expect_kind 'dot'
@@ -41,12 +25,7 @@ fn emit_sys_memory [str target_type] str [
             count = '0'
         ]
         else [ count = intify count, count_type ]
-        str bytes = emit_alloc_size actual_target, count
-        str out = new_reg 0
-        str call = str.concat out, ' = call ptr @malloc(i64 '
-        call = str.concat call, bytes
-        call = str.concat call, ')'
-        emit_inst call
+        str out = ir_alloc actual_target, count
         g_expr_type = actual_target
         g_expr_addr = ''
         = out
@@ -71,14 +50,7 @@ fn emit_sys_memory [str target_type] str [
         else [ count2 = intify count2, count_type2 ]
         str actual_type = target_type
         if [not str.starts actual_type, 'ptr '] [ actual_type = old_type ]
-        str bytes2 = emit_alloc_size actual_type, count2
-        str out2 = new_reg 0
-        str call2 = str.concat out2, ' = call ptr @realloc(ptr '
-        call2 = str.concat call2, old
-        call2 = str.concat call2, ', i64 '
-        call2 = str.concat call2, bytes2
-        call2 = str.concat call2, ')'
-        emit_inst call2
+        str out2 = ir_realloc actual_type, old, count2
         g_expr_type = actual_type
         g_expr_addr = ''
         = out2
@@ -91,9 +63,7 @@ fn emit_sys_memory [str target_type] str [
             str fmsg = str.concat 'sys.free expects pointer, got ', old_type2
             fail_prev fmsg
         ]
-        str call3 = str.concat 'call void @free(ptr ', old2
-        call3 = str.concat call3, ')'
-        emit_inst call3
+        ir_free old2
         g_expr_type = 'int'
         g_expr_addr = ''
         = '0'
@@ -106,15 +76,7 @@ fn emit_sys_memory [str target_type] str [
 ]
 
 fn emit_array_element_addr [str addr, str array_type, str index] str [
-    str gep = new_reg 0
-    str gs = str.concat gep, ' = getelementptr inbounds '
-    gs = str.concat gs, storage_type array_type
-    gs = str.concat gs, ', ptr '
-    gs = str.concat gs, addr
-    gs = str.concat gs, ', i32 0, i32 '
-    gs = str.concat gs, index
-    emit_inst gs
-    = gep
+    = ir_array_addr array_type, addr, index
 ]
 
 fn emit_array_store [str addr, str array_type, str elem_type, str index, str value] int [
@@ -147,10 +109,7 @@ fn parse_array_literal_into [str addr, str array_type] int [
         if [str.starts elem_type, 'arr ' and str.eq g_kind, 'lb'] [
             if [in_range] [ parse_array_literal_into elem_addr, elem_type ]
             else [
-                str dummy = new_reg 0
-                str da = str.concat dummy, ' = alloca '
-                da = str.concat da, storage_type elem_type
-                emit_inst da
+                str dummy = ir_stack_alloc elem_type
                 parse_array_literal_into dummy, elem_type
             ]
         ]
@@ -209,11 +168,8 @@ fn parse_inferred_array_decl_ir [str name] int [
     array_type = str.concat array_type, ' '
     array_type = str.concat array_type, elem_type
     g_locals = map_put g_locals, name, array_type
-    str addr = new_reg 0
+    str addr = ir_stack_alloc array_type
     g_local_addrs = map_put g_local_addrs, name, addr
-    str alloc = str.concat addr, ' = alloca '
-    alloc = str.concat alloc, storage_type array_type
-    emit_inst alloc
 
     int index = 0
     while [index lt count] [
@@ -227,11 +183,8 @@ fn parse_inferred_array_decl_ir [str name] int [
 
 fn parse_explicit_array_decl_ir [str name, str typ] int [
     g_locals = map_put g_locals, name, typ
-    str addr = new_reg 0
+    str addr = ir_stack_alloc typ
     g_local_addrs = map_put g_local_addrs, name, addr
-    str alloc = str.concat addr, ' = alloca '
-    alloc = str.concat alloc, storage_type typ
-    emit_inst alloc
 
     if [str.eq g_kind, 'lb'] [
         parse_array_literal_into addr, typ
@@ -264,10 +217,8 @@ fn parse_decl_ir [int unused] int [
         = parse_explicit_array_decl_ir name, typ
     ]
     g_locals = map_put g_locals, name, typ
-    str addr = new_reg 0
+    str addr = ir_stack_alloc typ
     g_local_addrs = map_put g_local_addrs, name, addr
-    str a = str.concat addr, ' = alloca '
-    emit_inst str.concat a, storage_type typ
     str value = ''
     if [str.eq g_kind, 'id' and str.eq g_text, 'sys'] [
         value = emit_sys_memory typ
@@ -277,11 +228,6 @@ fn parse_decl_ir [int unused] int [
     ]
     str vt = g_expr_type
     value = checked_cast value, vt, typ
-    str st = str.concat 'store ', storage_type typ
-    st = str.concat st, ' '
-    st = str.concat st, value
-    st = str.concat st, ', ptr '
-    st = str.concat st, addr
-    emit_inst st
+    ir_store typ, value, addr
     = 0
 ]

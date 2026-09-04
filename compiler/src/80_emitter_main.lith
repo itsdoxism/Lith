@@ -5,22 +5,16 @@ fn emit_struct_ir [int unused] int [
     expect_kind 'lb'
     skip_nl 0
     str fields = ''
-    int first = 1
+    int count = 0
     while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
         str typ = parse_type 0
         next_tok 0
-        if [first eq 0] [ fields = str.concat fields, ', ' ]
-        fields = str.concat fields, storage_type typ
-        first = 0
+        fields = ir_fields_add fields, count, typ
+        count = count add 1
         skip_nl 0
     ]
     if [g_fatal_error eq 0] [ expect_kind 'rb' ]
-    str s = str.concat '%struct.', name
-    s = str.concat s, ' = type { '
-    s = str.concat s, fields
-    s = str.concat s, ' }'
-    emit_line s
-    emit_line ''
+    ir_struct_decl name, fields, count
     = 0
 ]
 
@@ -30,12 +24,7 @@ fn emit_global_ir [int unused] int [
     next_tok 0
     expect_kind 'assign'
     str value = parse_global_constant typ
-    str s = str.concat '@', name
-    s = str.concat s, ' = global '
-    s = str.concat s, storage_type typ
-    s = str.concat s, ' '
-    s = str.concat s, value
-    emit_line s
+    ir_global_decl name, typ, value
     = 0
 ]
 
@@ -44,89 +33,58 @@ fn emit_function_ir [int unused] int [
     str name = g_text
     next_tok 0
     expect_kind 'lb'
-    str args = ''
-    str prologue = ''
-    g_locals = ''
-    g_local_addrs = ''
-    g_temp = 0
-    int first = 1
+
+    str params = ''
+    int param_count = 0
     while [not str.eq g_kind, 'rb' and g_fatal_error eq 0] [
         str typ = parse_type 0
         str pname = g_text
         next_tok 0
-        g_locals = map_put g_locals, pname, typ
-        str paddr = new_reg 0
-        g_local_addrs = map_put g_local_addrs, pname, paddr
-        if [first eq 0] [ args = str.concat args, ', ' ]
-        args = str.concat args, abi_type typ
-        args = str.concat args, ' %arg.'
-        args = str.concat args, pname
-        str p1 = str.concat '  ', paddr
-        p1 = str.concat p1, ' = alloca '
-        p1 = str.concat p1, storage_type typ
-        prologue = str.concat prologue, p1
-        prologue = str.concat prologue, str.chr 10
-        str p2 = str.concat '  store ', storage_type typ
-        p2 = str.concat p2, ' %arg.'
-        p2 = str.concat p2, pname
-        p2 = str.concat p2, ', ptr '
-        p2 = str.concat p2, paddr
-        prologue = str.concat prologue, p2
-        prologue = str.concat prologue, str.chr 10
-        first = 0
+        params = ir_params_add params, param_count, typ, pname
+        param_count = param_count add 1
         if [str.eq g_kind, 'comma'] [ next_tok 0 ]
         else [ break ]
     ]
     if [g_fatal_error] [ = 0 ]
     expect_kind 'rb'
+
     str ret = 'int'
     if [str.eq g_kind, 'id'] [ ret = parse_type 0 ]
     g_current_ret = ret
+    g_locals = ''
+    g_local_addrs = ''
+    g_temp = 0
     g_label = 0
     g_terminated = 0
     g_current_label = ''
     g_break_label = ''
     g_continue_label = ''
-    str head = str.concat 'define ', abi_type ret
-    head = str.concat head, ' @'
-    head = str.concat head, name
-    head = str.concat head, '('
-    head = str.concat head, args
-    head = str.concat head, ') {'
-    emit_line head
-    emit_label 'entry'
-    g_out = str.concat g_out, prologue
+
+    ir_begin_function name, ret, params, param_count
+
+    int i = 0
+    while [i lt param_count] [
+        str ptype = ir_param_type params, i
+        str pname2 = ir_param_name params, i
+        str paddr = ir_stack_alloc ptype
+        str pvalue = ir_param_value pname2
+        ir_store ptype, pvalue, paddr
+        g_locals = map_put g_locals, pname2, ptype
+        g_local_addrs = map_put g_local_addrs, pname2, paddr
+        i = i add 1
+    ]
+
     parse_block_ir 0
     if [g_fatal_error] [ = 0 ]
-    if [g_terminated eq 0] [ emit_return ret, default_value ret ]
-    emit_line '}'
-    emit_line ''
+    if [g_terminated eq 0] [
+        str fallback = ir_default_value ret
+        ir_return ret, fallback
+    ]
+    ir_end_function 0
     = 0
 ]
 
-fn emit_header [int unused] int [
-    emit_line '; Lith self-hosted LLVM backend'
-    emit_line ''
-    emit_line 'declare ptr @luna_read_text(ptr)'
-    emit_line 'declare i32 @luna_write_text(ptr, ptr)'
-    emit_line 'declare i32 @luna_str_len(ptr)'
-    emit_line 'declare i32 @luna_str_at(ptr, i32)'
-    emit_line 'declare ptr @luna_str_slice(ptr, i32, i32)'
-    emit_line 'declare ptr @luna_str_concat(ptr, ptr)'
-    emit_line 'declare i32 @luna_str_eq(ptr, ptr)'
-    emit_line 'declare i32 @luna_str_starts(ptr, ptr)'
-    emit_line 'declare ptr @luna_str_trim(ptr)'
-    emit_line 'declare ptr @luna_str_chr(i32)'
-    emit_line 'declare ptr @luna_int_str(i32)'
-    emit_line 'declare ptr @malloc(i64)'
-    emit_line 'declare ptr @realloc(ptr, i64)'
-    emit_line 'declare void @free(ptr)'
-    emit_line 'declare i32 @puts(ptr)'
-    emit_line ''
-    = 0
-]
-
-fn compile_llvm [str source] str [
+fn compile_source [str source] str [
     g_error = 0
     g_error_count = 0
     g_fatal_error = 0
@@ -137,7 +95,7 @@ fn compile_llvm [str source] str [
     scan_top source
     if [g_fatal_error] [ = '' ]
 
-    emit_header 0
+    ir_module_begin 0
     reset source
     skip_nl 0
     while [not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
@@ -162,8 +120,7 @@ fn compile_llvm [str source] str [
     ]
     if [g_fatal_error] [ = '' ]
     if [g_error] [ = '' ]
-    g_out = str.concat g_out, g_strings
-    = g_out
+    = ir_module_finish 0
 ]
 
 fn main [int argc, ptr str argv] int [
@@ -173,12 +130,12 @@ fn main [int argc, ptr str argv] int [
         io.print 'error: [g_module_error_message]'
         = 1
     ]
-    str ir = compile_llvm source
+    str output = compile_source source
     if [g_error] [
         io.print '[g_error_message]'
         = 1
     ]
-    int ok = io.write_text argv[2], ir
+    int ok = io.write_text argv[2], output
     if [ok eq 0] [ = 1 ]
     = 0
 ]

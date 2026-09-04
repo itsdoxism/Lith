@@ -38,15 +38,10 @@ fn load_match_target [int unused] str [
             g_expr_addr = addr
             = addr
         ]
-        str r = new_reg 0
-        str s = str.concat r, ' = load '
-        s = str.concat s, storage_type typ
-        s = str.concat s, ', ptr '
-        s = str.concat s, addr
-        emit_inst s
+        str loaded = ir_load typ, addr
         g_expr_type = typ
         g_expr_addr = addr
-        = r
+        = loaded
     ]
     fail 'unsupported match target'
     g_expr_type = 'int'
@@ -55,14 +50,10 @@ fn load_match_target [int unused] str [
 ]
 
 fn append_print_value [str acc, str value] str [
-    str r = new_reg 0
-    str s = str.concat r, ' = call ptr @luna_str_concat(ptr '
-    s = str.concat s, acc
-    s = str.concat s, ', ptr '
-    s = str.concat s, value
-    s = str.concat s, ')'
-    emit_inst s
-    = r
+    str args = ''
+    args = ir_args_add args, 0, 'str', acc
+    args = ir_args_add args, 1, 'str', value
+    = ir_call 'str', 'str.concat', args, 2
 ]
 
 fn print_value_for_name [str name] str [
@@ -70,28 +61,20 @@ fn print_value_for_name [str name] str [
     if [str.eq typ, ''] [
         str msg = str.concat 'unknown io.print interpolation name: ', name
         fail_prev msg
-        = string_const ''
+        = ir_string_const ''
     ]
     str addr = local_addr name
-    str loaded = new_reg 0
-    str ls = str.concat loaded, ' = load '
-    ls = str.concat ls, storage_type typ
-    ls = str.concat ls, ', ptr '
-    ls = str.concat ls, addr
-    emit_inst ls
+    str loaded = ir_load typ, addr
 
     if [str.eq typ, 'str'] [ = loaded ]
     if [str.eq typ, 'int' or str.eq typ, 'char' or str.eq typ, 'bool'] [
         str iv = intify loaded, typ
-        str out = new_reg 0
-        str call = str.concat out, ' = call ptr @luna_int_str(i32 '
-        call = str.concat call, iv
-        call = str.concat call, ')'
-        emit_inst call
-        = out
+        str args = ''
+        args = ir_args_add args, 0, 'int', iv
+        = ir_call 'str', 'int.str', args, 1
     ]
     fail_prev 'unsupported io.print interpolation type'
-    = string_const ''
+    = ir_string_const ''
 ]
 
 fn emit_print_stmt [int unused] int [
@@ -104,7 +87,7 @@ fn emit_print_stmt [int unused] int [
 
     str text = g_text
     next_tok 0
-    str out = string_const ''
+    str out = ir_string_const ''
     int n = str.len text
     int i = 0
     int segment = 0
@@ -113,7 +96,7 @@ fn emit_print_stmt [int unused] int [
         if [str.at text, i eq 91] [
             if [i gt segment] [
                 str literal = str.slice text, segment, i
-                out = append_print_value out, string_const literal
+                out = append_print_value out, ir_string_const literal
             ]
             i = i add 1
             int start = i
@@ -130,11 +113,9 @@ fn emit_print_stmt [int unused] int [
 
     if [segment lt n] [
         str tail = str.slice text, segment, n
-        out = append_print_value out, string_const tail
+        out = append_print_value out, ir_string_const tail
     ]
 
-    str ps = str.concat 'call i32 @puts(ptr ', out
-    ps = str.concat ps, ')'
-    emit_inst ps
+    ir_print_line out
     = 0
 ]

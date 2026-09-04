@@ -7,10 +7,8 @@ fn parse_global_constant [str typ] str [
         int index = 0
         while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
             str value = parse_global_constant elem_type
-            if [index gt 0] [ values = str.concat values, ', ' ]
-            values = str.concat values, storage_type elem_type
-            values = str.concat values, ' '
-            values = str.concat values, value
+            str key = int.str index
+            values = map_put values, key, value
             index = index add 1
             if [str.eq g_kind, 'comma'] [ next_tok 0 ]
             else [ break ]
@@ -20,15 +18,14 @@ fn parse_global_constant [str typ] str [
         if [not str.eq actual_count, expected_count] [
             fail_prev 'global array literal length does not match its fixed array type'
         ]
-        str out = str.concat '[ ', values
-        = str.concat out, ' ]'
+        = ir_const_array typ, values, index
     ]
 
     if [is_struct_type typ] [
         if [not str.eq g_kind, 'id' or not str.eq g_text, typ] [
             str smsg = str.concat 'global struct initializer must begin with ', typ
             fail smsg
-            = 'zeroinitializer'
+            = ir_default_value typ
         ]
         next_tok 0
         expect_kind 'lb'
@@ -38,10 +35,8 @@ fn parse_global_constant [str typ] str [
         while [not str.eq field, '' and not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
             str field_type = struct_field_type typ, field
             str field_value = parse_global_constant field_type
-            if [index2 gt 0] [ values2 = str.concat values2, ', ' ]
-            values2 = str.concat values2, storage_type field_type
-            values2 = str.concat values2, ' '
-            values2 = str.concat values2, field_value
+            str key2 = int.str index2
+            values2 = map_put values2, key2, field_value
             index2 = index2 add 1
             if [str.eq g_kind, 'comma'] [ next_tok 0 ]
             else [ break ]
@@ -54,8 +49,7 @@ fn parse_global_constant [str typ] str [
         expect_kind 'rb'
         str missing = struct_field_name typ, index2
         if [not str.eq missing, ''] [ fail_prev 'not enough values in global struct literal' ]
-        str out2 = str.concat '{ ', values2
-        = str.concat out2, ' }'
+        = ir_const_struct typ, values2, index2
     ]
 
     if [str.eq typ, 'str'] [
@@ -68,9 +62,9 @@ fn parse_global_constant [str typ] str [
             next_tok 0
             = 'null'
         ]
-        str s = string_const g_text
+        str out = ir_string_const g_text
         next_tok 0
-        = s
+        = out
     ]
 
     if [str.starts typ, 'ptr '] [
@@ -132,5 +126,5 @@ fn parse_global_constant [str typ] str [
 
     fail 'unsupported global initializer type'
     next_tok 0
-    = default_value typ
+    = ir_default_value typ
 ]

@@ -39,7 +39,6 @@ fn emit_call [str name] str [
 
     str args = ''
     int index = 0
-    int first = 1
 
     if [str.eq expected, '0'] [
         if [str.eq g_kind, 'lb'] [
@@ -64,11 +63,7 @@ fn emit_call [str name] str [
                 at = pt
             ]
             a = materialize_array_value a, at, aa
-            if [first eq 0] [ args = str.concat args, ', ' ]
-            args = str.concat args, abi_type at
-            args = str.concat args, ' '
-            args = str.concat args, a
-            first = 0
+            args = ir_args_add args, index, at, a
             index = index add 1
             if [str.eq g_kind, 'comma'] [ next_tok 0 ]
             else [ break ]
@@ -83,28 +78,16 @@ fn emit_call [str name] str [
         fail_prev msg
     ]
 
-    str mapped = mapped_name name
-    str r = new_reg 0
-    str s = str.concat r, ' = call '
-    s = str.concat s, abi_type ret
-    s = str.concat s, ' @'
-    s = str.concat s, mapped
-    s = str.concat s, '('
-    s = str.concat s, args
-    s = str.concat s, ')'
-    emit_inst s
+    str out = ir_call ret, name, args, index
     g_expr_type = ret
     g_expr_addr = ''
 
     if [is_aggregate_type ret] [
-        str addr = new_reg 0
-        str alloc = str.concat addr, ' = alloca '
-        alloc = str.concat alloc, storage_type ret
-        emit_inst alloc
-        store_typed_value addr, ret, r
+        str addr = ir_stack_alloc ret
+        store_typed_value addr, ret, out
         g_expr_addr = addr
     ]
-    = r
+    = out
 ]
 
 fn parse_postfix_value [str initial_value, str initial_type, str initial_addr] str [
@@ -126,16 +109,10 @@ fn parse_postfix_value [str initial_value, str initial_type, str initial_addr] s
             expect_kind 'rb'
 
             str elem = ''
-            str gep = new_reg 0
-            str gs = ''
+            str elem_addr = ''
             if [str.starts current_type, 'ptr '] [
                 elem = str.slice current_type, 4, str.len current_type
-                gs = str.concat gep, ' = getelementptr inbounds '
-                gs = str.concat gs, storage_type elem
-                gs = str.concat gs, ', ptr '
-                gs = str.concat gs, value
-                gs = str.concat gs, ', i32 '
-                gs = str.concat gs, idx
+                elem_addr = ir_pointer_addr elem, value, idx
             ]
             else [
                 if [str.starts current_type, 'arr '] [
@@ -144,28 +121,16 @@ fn parse_postfix_value [str initial_value, str initial_type, str initial_addr] s
                         fail_prev 'array indexing requires an addressable array value'
                         = value
                     ]
-                    gs = str.concat gep, ' = getelementptr inbounds '
-                    gs = str.concat gs, storage_type current_type
-                    gs = str.concat gs, ', ptr '
-                    gs = str.concat gs, current_addr
-                    gs = str.concat gs, ', i32 0, i32 '
-                    gs = str.concat gs, idx
+                    elem_addr = ir_array_addr current_type, current_addr, idx
                 ]
                 else [
                     fail_prev 'indexing requires an array or pointer'
                     = value
                 ]
             ]
-            emit_inst gs
-            str loaded = new_reg 0
-            str ls = str.concat loaded, ' = load '
-            ls = str.concat ls, storage_type elem
-            ls = str.concat ls, ', ptr '
-            ls = str.concat ls, gep
-            emit_inst ls
-            value = loaded
+            value = ir_load elem, elem_addr
             current_type = elem
-            current_addr = gep
+            current_addr = elem_addr
         ]
         else [
             next_tok 0
@@ -205,20 +170,8 @@ fn parse_postfix_value [str initial_value, str initial_type, str initial_addr] s
                 fail_prev fmsg
                 = value
             ]
-            str field_addr = new_reg 0
-            str fs = str.concat field_addr, ' = getelementptr inbounds '
-            fs = str.concat fs, storage_type struct_type
-            fs = str.concat fs, ', ptr '
-            fs = str.concat fs, struct_addr
-            fs = str.concat fs, ', i32 0, i32 '
-            fs = str.concat fs, field_index
-            emit_inst fs
-            str field_value = new_reg 0
-            str fl = str.concat field_value, ' = load '
-            fl = str.concat fl, storage_type field_type
-            fl = str.concat fl, ', ptr '
-            fl = str.concat fl, field_addr
-            emit_inst fl
+            str field_addr = ir_field_addr struct_type, struct_addr, field_index
+            str field_value = ir_load field_type, field_addr
             value = field_value
             current_type = field_type
             current_addr = field_addr
@@ -246,7 +199,7 @@ fn parse_primary [int unused] str [
         = v2
     ]
     if [str.eq g_kind, 'str'] [
-        str v3 = string_const g_text
+        str v3 = ir_string_const g_text
         next_tok 0
         g_expr_type = 'str'
         g_expr_addr = ''
@@ -298,11 +251,7 @@ fn parse_primary [int unused] str [
         str x = parse_primary 0
         str xt = g_expr_type
         str b = boolify x, xt
-        str rnot = new_reg 0
-        str sn = str.concat rnot, ' = xor i1 '
-        sn = str.concat sn, b
-        sn = str.concat sn, ', true'
-        emit_inst sn
+        str rnot = ir_not_bool b
         g_expr_type = 'bool'
         g_expr_addr = ''
         = rnot
@@ -316,13 +265,7 @@ fn parse_primary [int unused] str [
             str addr = local_addr root
             str value = addr
             if [not str.starts root_type, 'arr '] [
-                str loaded = new_reg 0
-                str load = str.concat loaded, ' = load '
-                load = str.concat load, storage_type root_type
-                load = str.concat load, ', ptr '
-                load = str.concat load, addr
-                emit_inst load
-                value = loaded
+                value = ir_load root_type, addr
             ]
             = parse_postfix_value value, root_type, addr
         ]
@@ -366,4 +309,3 @@ fn parse_primary [int unused] str [
     g_expr_addr = ''
     = '0'
 ]
-

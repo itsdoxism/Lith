@@ -1,0 +1,119 @@
+fn map_put [str table, str key, str value] str [
+    str r = str.concat table, key
+    r = str.concat r, '='
+    r = str.concat r, value
+    r = str.concat r, str.chr 10
+    = r
+]
+
+fn map_get [str table, str key] str [
+    int n = str.len table
+    int i = 0
+    str found = ''
+    while [i lt n] [
+        int ks = i
+        while [i lt n and str.at table, i ne 61 and str.at table, i ne 10] [ i = i add 1 ]
+        if [i ge n] [ break ]
+        if [str.at table, i eq 10] [
+            i = i add 1
+            continue
+        ]
+        str k = str.slice table, ks, i
+        i = i add 1
+        int vs = i
+        while [i lt n and str.at table, i ne 10] [ i = i add 1 ]
+        str v = str.slice table, vs, i
+        if [str.eq k, key] [ found = v ]
+        if [i lt n] [ i = i add 1 ]
+    ]
+    = found
+]
+
+fn fn_param_key [str name, int index] str [
+    str r = str.concat name, '@'
+    = str.concat r, int.str index
+]
+
+fn is_builtin_type_name [str s] int [
+    if [str.eq s, 'int'] [ = 1 ]
+    if [str.eq s, 'float'] [ = 1 ]
+    if [str.eq s, 'str'] [ = 1 ]
+    if [str.eq s, 'bool'] [ = 1 ]
+    if [str.eq s, 'char'] [ = 1 ]
+    if [str.eq s, 'ptr'] [ = 1 ]
+    if [str.eq s, 'arr'] [ = 1 ]
+    = 0
+]
+
+fn is_type_name [str s] int [
+    if [is_builtin_type_name s] [ = 1 ]
+    if [is_struct_type s] [ = 1 ]
+    = 0
+]
+
+fn parse_type [int unused] str [
+    if [not str.eq g_kind, 'id'] [
+        fatal 'expected type name'
+        = 'int'
+    ]
+    str t = g_text
+    next_tok 0
+    if [str.eq t, 'ptr'] [
+        if [not str.eq g_kind, 'id'] [
+            fatal 'pointer type expects an element type'
+            = 'ptr int'
+        ]
+        str elem = parse_type 0
+        = str.concat 'ptr ', elem
+    ]
+    if [str.eq t, 'arr'] [
+        # Bare `arr name = [...]` keeps local literal inference.
+        if [not str.eq g_kind, 'id' or not is_type_name g_text] [ = 'arr' ]
+        str elem2 = parse_type 0
+        if [not str.eq g_kind, 'int'] [
+            fatal 'explicit array type expects a fixed integer length'
+            = 'arr 0 int'
+        ]
+        str count = g_text
+        next_tok 0
+        str r = str.concat 'arr ', count
+        r = str.concat r, ' '
+        = str.concat r, elem2
+    ]
+    if [str.eq t, 'int'] [ = t ]
+    if [str.eq t, 'float'] [ = t ]
+    if [str.eq t, 'str'] [ = t ]
+    if [str.eq t, 'bool'] [ = t ]
+    if [str.eq t, 'char'] [ = t ]
+    if [is_struct_type t] [ = t ]
+    str msg = str.concat 'unknown type: ', t
+    fail_prev msg
+    = 'int'
+]
+
+fn is_decl_type [str s] int [
+    = is_builtin_type_name s
+]
+
+fn is_type_start [str s] int [
+    = is_type_name s
+]
+
+fn is_aggregate_type [str t] int [
+    if [str.starts t, 'arr '] [ = 1 ]
+    if [is_struct_type t] [ = 1 ]
+    = 0
+]
+
+fn local_type [str name] str [
+    str t = map_get g_locals, name
+    if [not str.eq t, ''] [ = t ]
+    = map_get g_globals, name
+]
+
+fn local_addr [str name] str [
+    str a = map_get g_local_addrs, name
+    if [not str.eq a, ''] [ = a ]
+    = ir_global_addr name
+]
+
