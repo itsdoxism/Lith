@@ -16,7 +16,8 @@ fn parse_global_constant [str typ] str [
             else [ break ]
         ]
         expect_kind 'rb'
-        if [not str.eq int.str index, expected_count] [
+        str actual_count = int.str index
+        if [not str.eq actual_count, expected_count] [
             fail_prev 'global array literal length does not match its fixed array type'
         ]
         str out = str.concat '[ ', values
@@ -133,4 +134,3 @@ fn parse_global_constant [str typ] str [
     next_tok 0
     = default_value typ
 ]
-
