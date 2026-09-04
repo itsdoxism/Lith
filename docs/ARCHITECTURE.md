@@ -97,8 +97,16 @@ use/definition ordering, branch targets, phi predecessors, call payloads, and
 basic-block termination. A validation failure is a compiler-internal error and
 prevents backend lowering.
 
-The first optimizer is intentionally conservative. It performs target-neutral
-integer/boolean constant propagation and folding, plus simplification of
-constant conditional branches. Backend-specific peepholes remain the backend's
-responsibility; language semantics and middle-end transforms must not depend on
-LLVM spelling.
+The optimizer is intentionally conservative and target-neutral. Its current
+passes include:
+
+- integer/boolean constant propagation and folding
+- simplification of constant conditional branches
+- immediate store-to-load forwarding for the same local address
+- dead-value elimination for pure IR operations only
+- pruning of unreferenced compiler-generated `dead.*` basic blocks
+
+Side-effecting operations (`call`, `store`, allocation, free, printing, and
+control-flow terminators) are never removed by dead-value elimination. Backend-
+specific peepholes remain the backend's responsibility; language semantics and
+middle-end transforms must not depend on LLVM spelling.
