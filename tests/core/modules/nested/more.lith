@@ -1,0 +1,3 @@
+fn nested_value [] int [
+    = 20
+]
