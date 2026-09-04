@@ -9,6 +9,20 @@ fn module_fail [str msg] int [
     = 0
 ]
 
+fn module_key [str path] str [
+    # map_put uses '=' and newlines as separators. Encode filesystem paths so
+    # arbitrary path punctuation cannot corrupt cycle/dedup state.
+    str key = ''
+    int n = str.len path
+    int i = 0
+    while [i lt n] [
+        key = str.concat key, int.str str.at path, i
+        key = str.concat key, '_'
+        i = i add 1
+    ]
+    = key
+]
+
 fn path_pop [str path] str [
     int n = str.len path
     if [n eq 0] [ = '' ]
@@ -89,14 +103,15 @@ fn module_marker [str path] str [
 
 fn load_module [str path] str [
     str canonical = path_normalize path
-    str active = map_get g_module_stack, canonical
+    str key = module_key canonical
+    str active = map_get g_module_stack, key
     if [not str.eq active, ''] [
         str msg = 'module import cycle: '
         msg = str.concat msg, canonical
         module_fail msg
         = ''
     ]
-    str seen = map_get g_module_seen, canonical
+    str seen = map_get g_module_seen, key
     if [not str.eq seen, ''] [ = '' ]
 
     str source = io.read_text canonical
@@ -107,7 +122,7 @@ fn load_module [str path] str [
         = ''
     ]
 
-    g_module_stack = map_put g_module_stack, canonical, '1'
+    g_module_stack = map_put g_module_stack, key, '1'
     str dependencies = ''
     int n = str.len source
     int start = 0
@@ -135,9 +150,9 @@ fn load_module [str path] str [
         i = i add 1
     ]
 
-    g_module_stack = map_put g_module_stack, canonical, ''
+    g_module_stack = map_put g_module_stack, key, ''
     if [g_module_error] [ = '' ]
-    g_module_seen = map_put g_module_seen, canonical, '1'
+    g_module_seen = map_put g_module_seen, key, '1'
     str out = dependencies
     out = str.concat out, module_marker canonical
     out = str.concat out, source
