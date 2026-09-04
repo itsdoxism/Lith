@@ -1,15 +1,37 @@
 fn map_put [str table, str key, str value] str [
     str r = str.concat table, key
-    r = str.concat r, '='
-    r = str.concat r, value
-    r = str.concat r, str.chr 10
-    = r
+    str next = str.concat r, '='
+    sys.free r
+    r = next
+    next = str.concat r, value
+    sys.free r
+    r = next
+    str nl = str.chr 10
+    next = str.concat r, nl
+    sys.free r
+    sys.free nl
+    = next
+]
+
+fn map_key_eq_at [str table, int start, int stop, str key] int [
+    int key_len = str.len key
+    int len = stop sub start
+    if [len ne key_len] [ = 0 ]
+    int i = 0
+    while [i lt key_len] [
+        int pos = start add i
+        if [str.at table, pos ne str.at key, i] [ = 0 ]
+        i = i add 1
+    ]
+    = 1
 ]
 
 fn map_get [str table, str key] str [
     int n = str.len table
     int i = 0
-    str found = ''
+    int found_start = 0
+    int found_stop = 0
+    int found = 0
     while [i lt n] [
         int ks = i
         while [i lt n and str.at table, i ne 61 and str.at table, i ne 10] [ i = i add 1 ]
@@ -18,15 +40,19 @@ fn map_get [str table, str key] str [
             i = i add 1
             continue
         ]
-        str k = str.slice table, ks, i
+        int key_matches = map_key_eq_at table, ks, i, key
         i = i add 1
         int vs = i
         while [i lt n and str.at table, i ne 10] [ i = i add 1 ]
-        str v = str.slice table, vs, i
-        if [str.eq k, key] [ found = v ]
+        if [key_matches] [
+            found = 1
+            found_start = vs
+            found_stop = i
+        ]
         if [i lt n] [ i = i add 1 ]
     ]
-    = found
+    if [found] [ = str.slice table, found_start, found_stop ]
+    = ''
 ]
 
 fn fn_param_key [str name, int index] str [
@@ -116,4 +142,3 @@ fn local_addr [str name] str [
     if [not str.eq a, ''] [ = a ]
     = ir_global_addr name
 ]
-

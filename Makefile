@@ -4,7 +4,7 @@ CLANG ?= clang
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror
 BUILD := build
 BOOTSTRAP_C := compiler/lunac.py
-BOOTSTRAP_LLVM := compiler/lunac_llvm.py
+BOOTSTRAP_LLVM := compiler/lith_bootstrap_llvm.py
 RUNTIME := runtime/luna_runtime.c
 RUNTIME_H := runtime/luna_runtime.h
 LLVM_RUNTIME := runtime/luna_runtime.ll
@@ -15,6 +15,7 @@ SELF_MODULES := \
 	compiler/src/20_symbols.lith \
 	compiler/src/25_ir.lith \
 	compiler/src/26_ir_validate.lith \
+	compiler/src/27_ir_index.lith \
 	compiler/src/27_ir_optimize.lith \
 	compiler/src/backend/llvm/25_core.lith \
 	compiler/src/backend/llvm/26_ops.lith \

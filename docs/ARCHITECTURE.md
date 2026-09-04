@@ -34,9 +34,12 @@ Operands are opaque handles (`$v`, `$p`, `$g`, `$s`) rather than LLVM register,
 parameter, global, or string-address syntax. A function is lowered only after
 its body has been parsed and type-checked.
 
-The IR currently uses a compact sequential record buffer. This is intentionally
-simple enough to remain self-hostable while providing a stable seam for later
-IR passes and additional backends.
+The IR builder now stores function records in growable parallel field arrays
+(`op`, `a`, `b`, `c`, `d`, `e`) instead of repeatedly rebuilding one giant
+serialized string. A compatibility serializer currently feeds the existing
+validator/optimizer boundary; later passes can migrate directly onto the
+structured arena without changing frontend semantics. This removes the main
+quadratic string-growth cost while preserving the target-neutral IR contract.
 
 ## LLVM backend
 
@@ -110,3 +113,21 @@ Side-effecting operations (`call`, `store`, allocation, free, printing, and
 control-flow terminators) are never removed by dead-value elimination. Backend-
 specific peepholes remain the backend's responsibility; language semantics and
 middle-end transforms must not depend on LLVM spelling.
+
+## Indexed IR storage
+
+Optimizer v2 keeps each function in one compact serialized arena and builds a
+small integer record-start index for repeated middle-end access. This avoids
+materializing per-record heap strings or rescanning the entire function for
+every pass. Dead-value analysis now runs backward over the index and emits the
+kept records in one forward pass.
+
+The shared string-table helpers also avoid allocating temporary key/value
+slices for every `map_get` probe; only a matched value is materialized. This is
+important because symbol tables, validator state, and optimizer alias maps all
+use the same compact map representation.
+
+On the self-host compiler workload used during this migration, peak memory fell
+from roughly 631 MB to about 52 MB while preserving the fixed point. The number
+is environment-specific and is documented as a development measurement rather
+than a language guarantee.

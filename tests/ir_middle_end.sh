@@ -46,7 +46,6 @@ if grep -q ' load i32' "$LOAD_BODY"; then
     exit 1
 fi
 grep -q 'ret i32 9' "$LOAD_BODY"
-
 # Source after an unconditional return is emitted behind a compiler-generated
 # dead block; CFG pruning should remove the unreachable print call.
 if grep -q 'call i32 @puts' "$IR"; then
@@ -71,7 +70,9 @@ fi
 # Keep the validator wired before and after optimization. This catches an
 # accidental bypass even though ordinary source cannot directly construct
 # malformed internal records.
-grep -q 'ir_validate_function g_ir_code' compiler/src/25_ir.lith
+grep -q 'ir_validate_function raw' compiler/src/25_ir.lith
 grep -q 'ir_validate_function optimized' compiler/src/25_ir.lith
+grep -q 'ir_index_record_count' compiler/src/27_ir_index.lith
+grep -q 'ir_index_fill' compiler/src/27_ir_index.lith
 
 echo 'Lith IR validator + optimizer: passed'
