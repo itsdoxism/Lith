@@ -9,9 +9,9 @@ RUNTIME := runtime/luna_runtime.c
 RUNTIME_H := runtime/luna_runtime.h
 LLVM_RUNTIME := runtime/luna_runtime.ll
 
-.PHONY: all test selfhost llvm llvm-check clean
+.PHONY: all test selfhost llvm llvm-check llvm-selfhost clean
 
-all: $(BUILD)/reference
+all: $(BUILD)/reference-llvm
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -37,11 +37,16 @@ selfhost:
 llvm-check:
 	PYTHON=$(PYTHON) CLANG=$(CLANG) BUILD=$(BUILD)/llvm LLVM_LUNAC=$(LLVM_LUNAC) C_LUNAC=$(LUNAC) LLVM_RUNTIME=$(LLVM_RUNTIME) sh tests/llvm_backend.sh
 
-test: $(BUILD)/reference
+llvm-selfhost:
+	PYTHON=$(PYTHON) CLANG=$(CLANG) BUILD=$(BUILD)/llvm-selfhost LLVM_LUNAC=$(LLVM_LUNAC) LLVM_RUNTIME=$(LLVM_RUNTIME) sh tests/llvm_self_host.sh
+
+test: $(BUILD)/reference $(BUILD)/reference-llvm
 	$(BUILD)/reference
+	$(BUILD)/reference-llvm
 	$(PYTHON) -m py_compile $(LUNAC) $(LLVM_LUNAC)
 	$(MAKE) selfhost
 	$(MAKE) llvm-check
+	$(MAKE) llvm-selfhost
 
 clean:
 	rm -rf $(BUILD) compiler/__pycache__
