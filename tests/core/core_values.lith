@@ -1,0 +1,109 @@
+struct Pair [
+    int left
+    int right
+]
+
+struct Node [
+    int value
+    ptr Node next
+]
+
+arr int 3 global_numbers = [7, 8, 9]
+arr arr int 2 2 global_matrix = [[1, 2], [3, 4]]
+Pair global_pair = Pair [9, 4]
+str global_text = 'lith'
+ptr int global_null = null
+
+fn sum3 [arr int 3 values] int [
+    = values[0] add values[1] add values[2]
+]
+
+fn change [arr int 3 values] arr int 3 [
+    values[1] = values[1] add 10
+    = values
+]
+
+fn make_pair [] Pair [
+    = Pair [10, 20]
+]
+
+fn swap [Pair value] Pair [
+    = Pair [value.right, value.left]
+]
+
+fn add_two [int a, int b] int [
+    = a add b
+]
+
+fn answer [] int [
+    = 42
+]
+
+fn main [] int [
+    arr int 3 values = [1, 2, 3]
+    arr int 3 changed = change values
+    if [values[1] ne 2] [ = 1 ]
+    if [changed[1] ne 12] [ = 2 ]
+    if [sum3 changed ne 16] [ = 3 ]
+
+    arr arr int 2 2 matrix = [[10, 11], [12, 13]]
+    if [matrix[1][0] ne 12] [ = 4 ]
+    if [global_matrix[1][1] ne 4] [ = 5 ]
+    if [global_numbers[2] ne 9] [ = 6 ]
+
+    Pair original = make_pair []
+    Pair reversed = swap original
+    if [original.left ne 10] [ = 7 ]
+    if [reversed.left ne 20] [ = 8 ]
+    if [make_pair [].right ne 20] [ = 9 ]
+    if [global_pair.left ne 9] [ = 10 ]
+
+    int grouped = add_two [1 add 2], [3 mul 4]
+    if [grouped ne 15] [ = 11 ]
+    int zero = answer []
+    if [zero ne 42] [ = 12 ]
+
+    float mixed = 2 add 0.5
+    if [mixed ne 2.5] [ = 13 ]
+    int narrowed = mixed as int
+    if [narrowed ne 2] [ = 14 ]
+    float widened = 4
+    if [widened ne 4.0] [ = 15 ]
+    bool truthy = mixed as bool
+    if [not truthy] [ = 16 ]
+
+    ptr int pnull = null
+    if [pnull] [ = 17 ]
+    str snull = null
+    if [snull] [ = 18 ]
+    if [global_null] [ = 19 ]
+    if [not str.eq global_text, 'lith'] [ = 20 ]
+
+    int choice = match 2 [
+        is 1 [ 10 ]
+        is 2 [ 20 ]
+        else [ 30 ]
+    ]
+    if [choice ne 20] [ = 21 ]
+
+    str label = match 2 [
+        is 1 [ 'one' ]
+        is 2 [ 'two' ]
+        else [ 'other' ]
+    ]
+    if [not str.eq label, 'two'] [ = 22 ]
+
+    arr int 2 first = [5, 6]
+    arr int 2 second = [7, 8]
+    arr int 2 selected = match 1 [
+        is 1 [ first ]
+        else [ second ]
+    ]
+    if [selected[0] ne 5] [ = 23 ]
+
+    Node node = Node [3, null]
+    if [node.value ne 3] [ = 24 ]
+    if [node.next] [ = 25 ]
+
+    = 0
+]
