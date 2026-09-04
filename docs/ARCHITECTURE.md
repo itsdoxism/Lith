@@ -34,9 +34,12 @@ Operands are opaque handles (`$v`, `$p`, `$g`, `$s`) rather than LLVM register,
 parameter, global, or string-address syntax. A function is lowered only after
 its body has been parsed and type-checked.
 
-The IR currently uses a compact sequential record buffer. This is intentionally
-simple enough to remain self-hostable while providing a stable seam for later
-IR passes and additional backends.
+The IR builder now stores function records in growable parallel field arrays
+(`op`, `a`, `b`, `c`, `d`, `e`) instead of repeatedly rebuilding one giant
+serialized string. A compatibility serializer currently feeds the existing
+validator/optimizer boundary; later passes can migrate directly onto the
+structured arena without changing frontend semantics. This removes the main
+quadratic string-growth cost while preserving the target-neutral IR contract.
 
 ## LLVM backend
 
