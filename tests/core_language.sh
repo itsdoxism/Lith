@@ -54,6 +54,10 @@ check_compile_error \
     bad-cast \
     'invalid explicit cast: str as int'
 check_compile_error \
+    "$ROOT/tests/core/bad_implicit_pointer_cast.lith" \
+    bad-implicit-pointer-cast \
+    'type mismatch: expected ptr char, got ptr int'
+check_compile_error \
     "$ROOT/tests/core/bad_zero_call.lith" \
     bad-zero-call \
     'zero-argument call requires []'
