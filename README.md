@@ -20,7 +20,16 @@ stage2.ll == stage3.ll == stage4.ll
 
 That is the executable bootstrap proof that the Luna-written compiler can reproduce itself.
 
-The self-hosted LLVM compiler now also supports the first broader feature-parity slice: typed pointers, pointer indexing, and `sys.alloc`, `sys.realloc`, and `sys.free`. Allocation sizes are derived from the declared pointer element type in generated LLVM IR rather than using a fixed byte multiplier.
+The self-hosted LLVM compiler now covers a larger Stage-0 parity slice:
+
+- typed pointers and pointer indexing
+- `sys.alloc`, `sys.realloc`, and `sys.free`
+- `struct` declarations and LLVM struct layout emission
+- struct-aware allocation sizing
+- indexed member access such as `tokens[0].kind`
+- member loads/stores for primitive and string fields
+
+Allocation sizes are derived from the declared pointer element type in generated LLVM IR rather than using a fixed byte multiplier.
 
 ## Build the compiler
 
@@ -84,7 +93,7 @@ Run the LLVM self-host fixed-point proof:
 make llvm-selfhost
 ```
 
-Run the user-facing native driver and pointer-memory smoke test:
+Run the user-facing native driver, pointer-memory, and struct member smoke tests:
 
 ```sh
 make driver-check
@@ -111,14 +120,15 @@ tests/self_host.sh                    legacy C emitter fixed-point proof
 tests/llvm_backend.sh                 LLVM backend transition/runtime checks
 tests/llvm_self_host.sh               LLVM emitter fixed-point proof
 tests/selfhost_memory.luna            pointer allocation/reallocation/free fixture
+tests/selfhost_structs.luna           struct layout/member fixture
 examples/reference.luna               executable language reference
 ```
 
 ## Next milestones
 
-1. continue self-hosted LLVM feature parity with `struct` + member access,
-2. add array literals/iteration and `match`,
-3. add the full `io.print` interpolation surface,
+1. add self-hosted `match` support,
+2. add the full `io.print` interpolation surface,
+3. add array literals/iteration where they are still needed beyond pointer-backed collections,
 4. consolidate the split bootstrap source into the canonical Luna compiler source,
 5. reduce Python to a bootstrap-only recovery artifact,
 6. grow the standard library/runtime surface,
