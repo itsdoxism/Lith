@@ -110,6 +110,11 @@ fn is_pointer_like [str typ] int [
     = 0
 ]
 
+fn is_null_pointer_type [str typ] int [
+    if [str.eq typ, 'ptr any'] [ = 1 ]
+    = 0
+]
+
 fn can_boolify [str typ] int [
     if [str.eq typ, 'bool' or is_integer_like typ or str.eq typ, 'float' or is_pointer_like typ] [ = 1 ]
     = 0
@@ -202,9 +207,10 @@ fn can_cast [str from, str to] int [
         if [is_integer_like from] [ = 1 ]
         = 0
     ]
-    if [str.eq to, 'str' and str.starts from, 'ptr '] [ = 1 ]
-    if [str.starts to, 'ptr ' and str.eq from, 'str'] [ = 1 ]
-    if [str.starts to, 'ptr ' and str.starts from, 'ptr '] [ = 1 ]
+    # `null` has the internal type `ptr any` and is the only pointer value
+    # that implicitly adapts to a concrete pointer/string destination.
+    if [str.eq to, 'str' and is_null_pointer_type from] [ = 1 ]
+    if [str.starts to, 'ptr ' and is_null_pointer_type from] [ = 1 ]
     = 0
 ]
 
@@ -214,6 +220,7 @@ fn can_explicit_cast [str from, str to] int [
     if [str.eq from, 'float' and str.eq to, 'char'] [ = 1 ]
     if [str.eq from, 'float' and str.eq to, 'bool'] [ = 1 ]
     if [str.eq from, 'bool' and str.eq to, 'float'] [ = 1 ]
+    if [is_pointer_like from and is_pointer_like to] [ = 1 ]
     = 0
 ]
 
@@ -232,9 +239,7 @@ fn cast_value [str op, str from, str to] str [
         = intify op, from
     ]
     if [str.eq to, 'float'] [ = floatify op, from ]
-    if [str.eq to, 'str' and str.starts from, 'ptr '] [ = op ]
-    if [str.starts to, 'ptr ' and str.eq from, 'str'] [ = op ]
-    if [str.starts to, 'ptr ' and str.starts from, 'ptr '] [ = op ]
+    if [is_pointer_like from and is_pointer_like to] [ = op ]
     = op
 ]
 
@@ -491,4 +496,3 @@ fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op
     g_expr_addr = ''
     = '0'
 ]
-
