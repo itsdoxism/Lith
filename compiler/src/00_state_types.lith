@@ -100,6 +100,7 @@ int g_string_id = 0
 int g_temp = 0
 int g_label = 0
 int g_terminated = 0
+str g_current_label = ''
 str g_break_label = ''
 str g_continue_label = ''
 str g_current_ret = 'int'
