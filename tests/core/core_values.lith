@@ -70,48 +70,58 @@ fn main [] int [
     heap_node.next = null
     if [heap_node.value ne 55] [ = 12 ]
     if [heap_node.next] [ = 13 ]
+    ptr int raw_node = heap_node as ptr int
+    ptr Node typed_node = raw_node as ptr Node
+    if [typed_node.value ne 55] [ = 14 ]
     sys.free heap_node
 
+    str text = 'cast'
+    ptr char text_ptr = text as ptr char
+    str text_again = text_ptr as str
+    if [not str.eq text_again, 'cast'] [ = 15 ]
+
     int grouped = add_two [1 add 2], [3 mul 4]
-    if [grouped ne 15] [ = 14 ]
+    if [grouped ne 15] [ = 16 ]
     int zero = answer []
-    if [zero ne 42] [ = 15 ]
+    if [zero ne 42] [ = 17 ]
 
     float mixed = 2 add 0.5
-    if [mixed ne 2.5] [ = 16 ]
+    if [mixed ne 2.5] [ = 18 ]
     int narrowed = mixed as int
-    if [narrowed ne 2] [ = 17 ]
+    if [narrowed ne 2] [ = 19 ]
     float widened = 4
-    if [widened ne 4.0] [ = 18 ]
+    if [widened ne 4.0] [ = 20 ]
     bool truthy = mixed as bool
-    if [not truthy] [ = 19 ]
+    if [not truthy] [ = 21 ]
+    int bool_int = truthy
+    if [bool_int ne 1] [ = 22 ]
 
     ptr int pnull = null
-    if [pnull] [ = 20 ]
+    if [pnull] [ = 23 ]
     str snull = null
-    if [snull] [ = 21 ]
-    if [global_null] [ = 22 ]
-    if [not str.eq global_text, 'lith'] [ = 23 ]
+    if [snull] [ = 24 ]
+    if [global_null] [ = 25 ]
+    if [not str.eq global_text, 'lith'] [ = 26 ]
 
     int choice = match 2 [
         is 1 [ 10 ]
         is 2 [ 20 ]
         else [ 30 ]
     ]
-    if [choice ne 20] [ = 24 ]
+    if [choice ne 20] [ = 27 ]
 
     int grouped_choice = match [1 add 1] [
         is 2 [ 44 ]
         else [ 0 ]
     ]
-    if [grouped_choice ne 44] [ = 25 ]
+    if [grouped_choice ne 44] [ = 28 ]
 
     str label = match 2 [
         is 1 [ 'one' ]
         is 2 [ 'two' ]
         else [ 'other' ]
     ]
-    if [not str.eq label, 'two'] [ = 26 ]
+    if [not str.eq label, 'two'] [ = 29 ]
 
     arr int 2 first = [5, 6]
     arr int 2 second = [7, 8]
@@ -119,29 +129,29 @@ fn main [] int [
         is 1 [ first ]
         else [ second ]
     ]
-    if [selected[0] ne 5] [ = 27 ]
+    if [selected[0] ne 5] [ = 30 ]
 
     int selected_direct = match 1 [
         is 1 [ first ]
         else [ second ]
     ][1]
-    if [selected_direct ne 6] [ = 28 ]
+    if [selected_direct ne 6] [ = 31 ]
 
     Pair matched_pair = match 1 [
         is 1 [ original ]
         else [ reversed ]
     ]
-    if [matched_pair.right ne 20] [ = 29 ]
+    if [matched_pair.right ne 20] [ = 32 ]
 
     int matched_field = match 1 [
         is 1 [ original ]
         else [ reversed ]
     ].left
-    if [matched_field ne 10] [ = 30 ]
+    if [matched_field ne 10] [ = 33 ]
 
     Node node = Node [3, null]
-    if [node.value ne 3] [ = 31 ]
-    if [node.next] [ = 32 ]
+    if [node.value ne 3] [ = 34 ]
+    if [node.next] [ = 35 ]
 
     = 0
 ]
