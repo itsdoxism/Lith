@@ -1,0 +1,214 @@
+fn map_put [str table, str key, str value] str [
+    str r = str.concat table, key
+    r = str.concat r, '='
+    r = str.concat r, value
+    r = str.concat r, str.chr 10
+    = r
+]
+
+fn map_get [str table, str key] str [
+    int n = str.len table
+    int i = 0
+    str found = ''
+    while [i lt n] [
+        int ks = i
+        while [i lt n and str.at table, i ne 61 and str.at table, i ne 10] [ i = i add 1 ]
+        if [i ge n] [ break ]
+        if [str.at table, i eq 10] [
+            i = i add 1
+            continue
+        ]
+        str k = str.slice table, ks, i
+        i = i add 1
+        int vs = i
+        while [i lt n and str.at table, i ne 10] [ i = i add 1 ]
+        str v = str.slice table, vs, i
+        if [str.eq k, key] [ found = v ]
+        if [i lt n] [ i = i add 1 ]
+    ]
+    = found
+]
+
+fn fn_param_key [str name, int index] str [
+    str r = str.concat name, '@'
+    = str.concat r, int.str index
+]
+
+fn parse_type [int unused] str [
+    str t = g_text
+    next_tok 0
+    if [str.eq t, 'ptr'] [
+        str elem = g_text
+        next_tok 0
+        t = str.concat 'ptr ', elem
+    ]
+    = t
+]
+
+fn is_decl_type [str s] int [
+    if [str.eq s, 'int'] [ = 1 ]
+    if [str.eq s, 'float'] [ = 1 ]
+    if [str.eq s, 'str'] [ = 1 ]
+    if [str.eq s, 'bool'] [ = 1 ]
+    if [str.eq s, 'char'] [ = 1 ]
+    if [str.eq s, 'ptr'] [ = 1 ]
+    if [str.eq s, 'arr'] [ = 1 ]
+    = 0
+]
+
+fn llvm_type [str t] str [
+    if [str.eq t, 'int'] [ = 'i32' ]
+    if [str.eq t, 'char'] [ = 'i32' ]
+    if [str.eq t, 'bool'] [ = 'i1' ]
+    if [str.eq t, 'float'] [ = 'double' ]
+    if [str.eq t, 'str'] [ = 'ptr' ]
+    if [str.starts t, 'ptr '] [ = 'ptr' ]
+    = t
+]
+
+fn default_value [str t] str [
+    if [str.eq t, 'str'] [ = 'null' ]
+    if [str.starts t, 'ptr '] [ = 'null' ]
+    if [str.eq t, 'float'] [ = '0.0' ]
+    = '0'
+]
+
+fn local_type [str name] str [
+    str t = map_get g_locals, name
+    if [not str.eq t, ''] [ = t ]
+    = map_get g_globals, name
+]
+
+fn local_addr [str name] str [
+    str a = map_get g_local_addrs, name
+    if [not str.eq a, ''] [ = a ]
+    = str.concat '@', name
+]
+
+fn emit_line [str s] int [
+    g_out = str.concat g_out, s
+    g_out = str.concat g_out, str.chr 10
+    = 0
+]
+
+fn emit_string_line [str s] int [
+    g_strings = str.concat g_strings, s
+    g_strings = str.concat g_strings, str.chr 10
+    = 0
+]
+
+fn new_reg [int unused] str [
+    g_temp = g_temp add 1
+    = str.concat '%r', int.str g_temp
+]
+
+fn new_label [str prefix] str [
+    g_label = g_label add 1
+    str r = str.concat prefix, '.'
+    = str.concat r, int.str g_label
+]
+
+fn emit_label [str name] int [
+    emit_line str.concat name, ':'
+    g_terminated = 0
+    = 0
+]
+
+fn ensure_live [int unused] int [
+    if [g_terminated] [
+        str dead = new_label 'dead'
+        emit_label dead
+    ]
+    = 0
+]
+
+fn emit_inst [str s] int [
+    ensure_live 0
+    emit_line str.concat '  ', s
+    = 0
+]
+
+fn emit_branch [str label] int [
+    emit_line str.concat '  br label %', label
+    g_terminated = 1
+    = 0
+]
+
+fn emit_cbranch [str cond, str yes, str no] int [
+    str s = str.concat '  br i1 ', cond
+    s = str.concat s, ', label %'
+    s = str.concat s, yes
+    s = str.concat s, ', label %'
+    s = str.concat s, no
+    emit_line s
+    g_terminated = 1
+    = 0
+]
+
+fn emit_return [str typ, str op] int [
+    str s = str.concat '  ret ', llvm_type typ
+    s = str.concat s, ' '
+    s = str.concat s, op
+    emit_line s
+    g_terminated = 1
+    = 0
+]
+
+fn emit_unreachable [int unused] int [
+    emit_line '  unreachable'
+    g_terminated = 1
+    = 0
+]
+
+fn hex_digit [int n] str [
+    if [n lt 10] [
+        int code = n add 48
+        = str.chr code
+    ]
+    int code2 = n sub 10 add 65
+    = str.chr code2
+]
+
+fn hex_byte [int c] str [
+    int hi = c div 16
+    int lo = c mod 16
+    str r = str.chr 92
+    str hd = hex_digit hi
+    r = str.concat r, hd
+    str ld = hex_digit lo
+    = str.concat r, ld
+]
+
+fn string_const [str s] str [
+    int id = g_string_id
+    g_string_id = g_string_id add 1
+    str name = str.concat '@.str.', int.str id
+    int n = str.len s
+    int i = 0
+    str data = ''
+    while [i lt n] [
+        int chv = str.at s, i
+        str hb = hex_byte chv
+        data = str.concat data, hb
+        i = i add 1
+    ]
+    str slash = str.chr 92
+    data = str.concat data, slash
+    data = str.concat data, '00'
+    int size = n add 1
+    str q = str.chr 34
+    str d = str.concat name, ' = private unnamed_addr constant ['
+    d = str.concat d, int.str size
+    d = str.concat d, ' x i8] c'
+    d = str.concat d, q
+    d = str.concat d, data
+    d = str.concat d, q
+    d = str.concat d, ', align 1'
+    emit_string_line d
+    str r = str.concat 'getelementptr inbounds ([', int.str size
+    r = str.concat r, ' x i8], ptr '
+    r = str.concat r, name
+    r = str.concat r, ', i64 0, i64 0)'
+    = r
+]
+
