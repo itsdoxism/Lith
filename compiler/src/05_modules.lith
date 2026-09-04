@@ -136,6 +136,7 @@ fn load_module [str path] str [
     ]
 
     g_module_stack = map_put g_module_stack, canonical, ''
+    if [g_module_error] [ = '' ]
     g_module_seen = map_put g_module_seen, canonical, '1'
     str out = dependencies
     out = str.concat out, module_marker canonical
