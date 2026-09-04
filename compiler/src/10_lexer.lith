@@ -1,0 +1,138 @@
+fn append_char [str s, int c] str [
+    = str.concat s, str.chr c
+]
+
+fn fail [str msg] int [
+    g_error = 1
+    = 0
+]
+
+fn is_alpha [int c] int [
+    = c ge 65 and c le 90 or c ge 97 and c le 122 or c eq 95
+]
+
+fn is_digit [int c] int [
+    = c ge 48 and c le 57
+]
+
+fn next_tok [int unused] int [
+    int n = str.len g_src
+    while [g_pos lt n] [
+        int c = str.at g_src, g_pos
+        if [c eq 32 or c eq 9 or c eq 13] [
+            g_pos = g_pos add 1
+            continue
+        ]
+        if [c eq 35] [
+            while [g_pos lt n and str.at g_src, g_pos ne 10] [
+                g_pos = g_pos add 1
+            ]
+            continue
+        ]
+        if [c eq 10] [
+            g_pos = g_pos add 1
+            g_line = g_line add 1
+            g_kind = 'nl'
+            g_text = ''
+            = 0
+        ]
+        if [c eq 39] [
+            g_pos = g_pos add 1
+            str s = ''
+            while [g_pos lt n] [
+                int q = str.at g_src, g_pos
+                if [q eq 39] [
+                    g_pos = g_pos add 1
+                    g_kind = 'str'
+                    g_text = s
+                    = 0
+                ]
+                if [q eq 92] [
+                    g_pos = g_pos add 1
+                    if [g_pos ge n] [ = fail 'unterminated escape' ]
+                    int e = str.at g_src, g_pos
+                    if [e eq 110] [ s = append_char s, 10 ]
+                    else [
+                        if [e eq 114] [ s = append_char s, 13 ]
+                        else [
+                            if [e eq 116] [ s = append_char s, 9 ]
+                            else [ s = append_char s, e ]
+                        ]
+                    ]
+                    g_pos = g_pos add 1
+                    continue
+                ]
+                s = append_char s, q
+                g_pos = g_pos add 1
+            ]
+            = fail 'unterminated string'
+        ]
+        if [is_alpha c] [
+            int start = g_pos
+            g_pos = g_pos add 1
+            while [g_pos lt n] [
+                int a = str.at g_src, g_pos
+                if [not is_alpha a and not is_digit a] [ break ]
+                g_pos = g_pos add 1
+            ]
+            g_kind = 'id'
+            g_text = str.slice g_src, start, g_pos
+            = 0
+        ]
+        if [is_digit c] [
+            int startn = g_pos
+            g_pos = g_pos add 1
+            while [g_pos lt n and is_digit str.at g_src, g_pos] [
+                g_pos = g_pos add 1
+            ]
+            g_kind = 'int'
+            if [g_pos lt n and str.at g_src, g_pos eq 46] [
+                g_pos = g_pos add 1
+                while [g_pos lt n and is_digit str.at g_src, g_pos] [
+                    g_pos = g_pos add 1
+                ]
+                g_kind = 'float'
+            ]
+            g_text = str.slice g_src, startn, g_pos
+            = 0
+        ]
+        g_pos = g_pos add 1
+        if [c eq 91] [ g_kind = 'lb' g_text = '[' = 0 ]
+        if [c eq 93] [ g_kind = 'rb' g_text = ']' = 0 ]
+        if [c eq 44] [ g_kind = 'comma' g_text = ',' = 0 ]
+        if [c eq 61] [ g_kind = 'assign' g_text = '=' = 0 ]
+        if [c eq 46] [ g_kind = 'dot' g_text = '.' = 0 ]
+        = fail 'unexpected character'
+    ]
+    g_kind = 'eof'
+    g_text = ''
+    = 0
+]
+
+fn reset [str source] int [
+    g_src = source
+    g_pos = 0
+    g_line = 1
+    g_kind = 'eof'
+    g_text = ''
+    = next_tok 0
+]
+
+fn skip_nl [int unused] int [
+    while [str.eq g_kind, 'nl'] [ next_tok 0 ]
+    = 0
+]
+
+fn expect_kind [str kind] int [
+    if [not str.eq g_kind, kind] [ = fail 'unexpected token kind' ]
+    next_tok 0
+    = 1
+]
+
+fn expect_id [str text] int [
+    if [not str.eq g_kind, 'id'] [ = fail 'expected identifier' ]
+    if [not str.eq g_text, text] [ = fail 'unexpected identifier' ]
+    next_tok 0
+    = 1
+]
+

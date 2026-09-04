@@ -1,12 +1,5 @@
 #!/bin/sh
 set -eu
-
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-COMPILER="$ROOT/build/lunac"
-
-if [ ! -x "$COMPILER" ]; then
-  echo 'Luna compiler is not bootstrapped yet; building it once...' >&2
-  make -C "$ROOT" compiler
-fi
-
-exec "$COMPILER" "$@"
+echo 'warning: lunac is deprecated; use lithc' >&2
+exec "$ROOT/bin/lithc" "$@"

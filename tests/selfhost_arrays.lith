@@ -1,0 +1,12 @@
+fn main [] int [
+    arr values = [10, 20, 30]
+    values[1] = 25
+
+    int sum = 0
+    loop item in values [
+        sum = sum add item
+    ]
+
+    io.print 'array sum: [sum]'
+    = 0
+]

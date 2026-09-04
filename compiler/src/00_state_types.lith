@@ -1,0 +1,91 @@
+# Struct metadata for the self-hosted LLVM compiler.
+str g_struct_counts = ''
+str g_struct_indices = ''
+str g_struct_types = ''
+
+fn struct_key [str name, str field] str [
+    str r = str.concat name, '@'
+    = str.concat r, field
+]
+
+fn is_struct_type [str typ] int [
+    str count = map_get g_struct_counts, typ
+    if [str.eq count, ''] [ = 0 ]
+    = 1
+]
+
+fn array_elem_type [str typ] str [
+    if [not str.starts typ, 'arr '] [ = '' ]
+    int n = str.len typ
+    int i = 4
+    while [i lt n and str.at typ, i ne 32] [ i = i add 1 ]
+    if [i ge n] [ = '' ]
+    = str.slice typ, 4, i
+]
+
+fn array_count_text [str typ] str [
+    if [not str.starts typ, 'arr '] [ = '' ]
+    int n = str.len typ
+    int i = 4
+    while [i lt n and str.at typ, i ne 32] [ i = i add 1 ]
+    if [i ge n] [ = '' ]
+    int start = i add 1
+    = str.slice typ, start, n
+]
+
+fn storage_type [str typ] str [
+    if [str.starts typ, 'arr '] [
+        str elem = array_elem_type typ
+        str count = array_count_text typ
+        str r = str.concat '[', count
+        r = str.concat r, ' x '
+        r = str.concat r, storage_type elem
+        = str.concat r, ']'
+    ]
+    if [is_struct_type typ] [
+        = str.concat '%struct.', typ
+    ]
+    = llvm_type typ
+]
+
+fn struct_field_index [str name, str field] str [
+    str key = struct_key name, field
+    = map_get g_struct_indices, key
+]
+
+fn struct_field_type [str name, str field] str [
+    str key = struct_key name, field
+    = map_get g_struct_types, key
+]
+# Luna LLVM compiler bootstrap subset, written in Luna.
+# This compiler emits typed LLVM IR directly for the subset needed to compile itself.
+use io
+use str
+use int
+
+str g_src = ''
+int g_pos = 0
+int g_line = 1
+str g_kind = 'eof'
+str g_text = ''
+int g_error = 0
+
+str g_out = ''
+str g_strings = ''
+int g_string_id = 0
+int g_temp = 0
+int g_label = 0
+int g_terminated = 0
+str g_break_label = ''
+str g_continue_label = ''
+str g_current_ret = 'int'
+
+str g_globals = ''
+str g_locals = ''
+str g_local_addrs = ''
+str g_fn_ret = ''
+str g_fn_argc = ''
+str g_fn_params = ''
+
+str g_expr_type = 'int'
+str g_expr_addr = ''

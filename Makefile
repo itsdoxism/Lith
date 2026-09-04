@@ -3,52 +3,59 @@ CC ?= cc
 CLANG ?= clang
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror
 BUILD := build
-LUNAC := compiler/lunac.py
-LLVM_LUNAC := compiler/lunac_llvm.py
-SELF_SRC := compiler/lunac.luna
-SELF_LUNAC := $(BUILD)/lunac
+BOOTSTRAP_C := compiler/lunac.py
+BOOTSTRAP_LLVM := compiler/lunac_llvm.py
 RUNTIME := runtime/luna_runtime.c
 RUNTIME_H := runtime/luna_runtime.h
 LLVM_RUNTIME := runtime/luna_runtime.ll
-BOOTSTRAP_GEN := compiler/bootstrap/build_reference_parity.py
-BOOTSTRAP_CHECK_SRC := $(BUILD)/bootstrap-check.luna
+SELF_MODULES := \
+	compiler/src/00_state_types.lith \
+	compiler/src/10_lexer.lith \
+	compiler/src/20_symbols_ir.lith \
+	compiler/src/30_operators.lith \
+	compiler/src/31_expressions.lith \
+	compiler/src/40_memory_arrays.lith \
+	compiler/src/50_match_print.lith \
+	compiler/src/60_statements.lith \
+	compiler/src/70_scanner.lith \
+	compiler/src/80_emitter_main.lith
+SELF_SRC := $(BUILD)/lithc.lith
+SELF_LITHC := $(BUILD)/lithc
 
-.PHONY: all compiler bootstrap-source-check driver-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
+.PHONY: all compiler driver-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
 
 all: compiler
 
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/lunac-stage1.ll: $(SELF_SRC) $(LLVM_LUNAC) | $(BUILD)
-	$(PYTHON) $(LLVM_LUNAC) $(SELF_SRC) $@
+$(SELF_SRC): $(SELF_MODULES) | $(BUILD)
+	cat $(SELF_MODULES) > $@
 
-$(BUILD)/lunac-stage1: $(BUILD)/lunac-stage1.ll $(LLVM_RUNTIME)
+$(BUILD)/lithc-stage1.ll: $(SELF_SRC) $(BOOTSTRAP_LLVM) | $(BUILD)
+	$(PYTHON) $(BOOTSTRAP_LLVM) $< $@
+
+$(BUILD)/lithc-stage1: $(BUILD)/lithc-stage1.ll $(LLVM_RUNTIME)
 	$(CLANG) -Wno-override-module -O2 $< $(LLVM_RUNTIME) -o $@
 
-$(BUILD)/lunac-stage2.ll: $(SELF_SRC) $(BUILD)/lunac-stage1
-	$(BUILD)/lunac-stage1 $(SELF_SRC) $@
+$(BUILD)/lithc-stage2.ll: $(SELF_SRC) $(BUILD)/lithc-stage1
+	$(BUILD)/lithc-stage1 $(SELF_SRC) $@
 
-$(SELF_LUNAC): $(BUILD)/lunac-stage2.ll $(LLVM_RUNTIME)
+$(SELF_LITHC): $(BUILD)/lithc-stage2.ll $(LLVM_RUNTIME)
 	$(CLANG) -Wno-override-module -O2 $< $(LLVM_RUNTIME) -o $@
 
-compiler: $(SELF_LUNAC)
-	chmod +x bin/luna bin/lunac 2>/dev/null || true
-	@echo 'Self-hosted Luna compiler: $(SELF_LUNAC)'
+compiler: $(SELF_LITHC)
+	chmod +x bin/lith bin/lithc bin/luna bin/lunac 2>/dev/null || true
+	@echo 'Self-hosted Lith compiler: $(SELF_LITHC)'
 
-bootstrap-source-check: | $(BUILD)
-	$(PYTHON) $(BOOTSTRAP_GEN) $(BOOTSTRAP_CHECK_SRC)
-	cmp $(BOOTSTRAP_CHECK_SRC) $(SELF_SRC)
-	@echo 'Historical bootstrap generator reproduces compiler/lunac.luna'
-
-$(BUILD)/reference.c: examples/reference.luna $(LUNAC) $(RUNTIME_H) | $(BUILD)
-	$(PYTHON) $(LUNAC) $< $@
+$(BUILD)/reference.c: examples/reference.lith $(BOOTSTRAP_C) $(RUNTIME_H) | $(BUILD)
+	$(PYTHON) $(BOOTSTRAP_C) $< $@
 
 $(BUILD)/reference: $(BUILD)/reference.c $(RUNTIME) $(RUNTIME_H)
 	$(CC) $(CFLAGS) -Iruntime $< $(RUNTIME) -o $@
 
-$(BUILD)/reference.ll: examples/reference.luna $(LLVM_LUNAC) | $(BUILD)
-	$(PYTHON) $(LLVM_LUNAC) $< $@
+$(BUILD)/reference.ll: examples/reference.lith $(BOOTSTRAP_LLVM) | $(BUILD)
+	$(PYTHON) $(BOOTSTRAP_LLVM) $< $@
 
 $(BUILD)/reference-llvm: $(BUILD)/reference.ll $(LLVM_RUNTIME)
 	$(CLANG) -Wno-override-module -O2 $< $(LLVM_RUNTIME) -o $@
@@ -60,17 +67,19 @@ selfhost:
 	PYTHON=$(PYTHON) CC=$(CC) CFLAGS='$(CFLAGS)' BUILD=$(BUILD)/selfhost sh tests/self_host.sh
 
 llvm-check:
-	PYTHON=$(PYTHON) CLANG=$(CLANG) BUILD=$(BUILD)/llvm LLVM_LUNAC=$(LLVM_LUNAC) C_LUNAC=$(LUNAC) LLVM_RUNTIME=$(LLVM_RUNTIME) sh tests/llvm_backend.sh
+	PYTHON=$(PYTHON) CLANG=$(CLANG) BUILD=$(BUILD)/llvm LLVM_LUNAC=$(BOOTSTRAP_LLVM) C_LUNAC=$(BOOTSTRAP_C) LLVM_RUNTIME=$(LLVM_RUNTIME) sh tests/llvm_backend.sh
 
-llvm-selfhost:
-	PYTHON=$(PYTHON) CLANG=$(CLANG) BUILD=$(BUILD)/llvm-selfhost LLVM_LUNAC=$(LLVM_LUNAC) LLVM_RUNTIME=$(LLVM_RUNTIME) SELF_SRC=$(SELF_SRC) sh tests/llvm_self_host.sh
+llvm-selfhost: $(SELF_SRC)
+	PYTHON=$(PYTHON) CLANG=$(CLANG) BUILD=$(BUILD)/llvm-selfhost LLVM_LUNAC=$(BOOTSTRAP_LLVM) LLVM_RUNTIME=$(LLVM_RUNTIME) SELF_SRC=$(SELF_SRC) sh tests/llvm_self_host.sh
 
 driver-check: compiler
-	sh bin/luna tests/selfhost_memory.luna -o $(BUILD)/driver-memory
+	sh bin/lith tests/selfhost_memory.lith -o $(BUILD)/driver-memory
 	$(BUILD)/driver-memory
-	sh bin/luna tests/selfhost_structs.luna -o $(BUILD)/driver-structs
+	sh bin/lith tests/selfhost_structs.lith -o $(BUILD)/driver-structs
 	$(BUILD)/driver-structs
-	@echo 'Native Luna driver + memory + struct member parity: passed'
+	sh bin/lith tests/selfhost_arrays.lith -o $(BUILD)/driver-arrays
+	$(BUILD)/driver-arrays
+	@echo 'Native Lith driver + memory + struct + array parity: passed'
 
 reference-selfhost: compiler
 	BUILD=$(BUILD) sh tests/reference_selfhost.sh
@@ -78,8 +87,7 @@ reference-selfhost: compiler
 test: compiler $(BUILD)/reference $(BUILD)/reference-llvm
 	$(BUILD)/reference
 	$(BUILD)/reference-llvm
-	$(PYTHON) -m py_compile $(LUNAC) $(LLVM_LUNAC) $(BOOTSTRAP_GEN)
-	$(MAKE) bootstrap-source-check
+	$(PYTHON) -m py_compile $(BOOTSTRAP_C) $(BOOTSTRAP_LLVM)
 	$(MAKE) driver-check
 	$(MAKE) reference-selfhost
 	$(MAKE) selfhost

@@ -1,36 +1,35 @@
-# Luna language notes
+# Lith language notes
 
-Luna is designed around a zero-shift typing philosophy. The language is still evolving, so this document distinguishes the broader Stage-0 surface from the smaller bootstrap subset implemented by the self-hosted compiler.
+Lith is designed around a zero-shift typing philosophy. The language is still evolving, but the self-hosted LLVM compiler now covers the public reference surface plus arrays, structs, memory helpers, match expressions, interpolation, and array iteration.
 
 ## Lexical rules
 
 - Comments begin with `#` and continue to end of line.
-- Strings use single quotes only. Double-quoted Luna string literals are rejected.
-- Common escapes such as `\n`, `\r`, `\t`, `\'`, and `\\` are supported by Stage 0.
+- Strings use single quotes.
 - Blocks and structural groups use `[` and `]`.
 - Identifiers use letters, digits, and `_`, but may not begin with a digit.
 
+Source files conventionally use the `.lith` extension.
+
 ## Values and declarations
 
-```luna
+```lith
 int age = 25
 float ratio = 1.5
-str name = 'luna'
+str name = 'lith'
 bool ready = true
 arr values = [1, 2, 3]
 ```
 
 Pointers use an explicit element type:
 
-```luna
+```lith
 ptr Token tokens = sys.alloc 8
 ```
 
-The self-hosted bootstrap compiler currently relies mainly on `int`, `float`, `str`, `bool`, `char`, and pointer types. Arrays, structs, and allocation helpers are still parity work for the self-hosted compiler even though Stage 0 supports them.
-
 ## Functions
 
-```luna
+```lith
 fn add_two [int a, int b] int [
     = a add b
 ]
@@ -38,11 +37,11 @@ fn add_two [int a, int b] int [
 
 Calls do not use parentheses:
 
-```luna
+```lith
 int result = add_two 10, 20
 ```
 
-For the bootstrap grammar, call arguments bind tighter than textual binary operators. Use a temporary variable when a complex binary expression would otherwise be ambiguous as a call argument.
+For the bootstrap grammar, call arguments bind tighter than textual binary operators. A temporary variable is useful when a complex expression would otherwise be ambiguous.
 
 ## Textual operators
 
@@ -54,9 +53,7 @@ Logical: `and`, `or`, `not`.
 
 ## Conditionals
 
-Statement conditionals use bracketed conditions and bodies:
-
-```luna
+```lith
 if [count gt 0] [
     io.print 'non-empty'
 ]
@@ -65,9 +62,9 @@ else [
 ]
 ```
 
-Stage 0 also supports match-style returned values:
+## Match
 
-```luna
+```lith
 fn classify [int kind] str [
     = match kind [
         is 1 [ 'word' ]
@@ -77,11 +74,21 @@ fn classify [int kind] str [
 ]
 ```
 
-Match expressions are not yet part of the self-hosted bootstrap subset.
+## Arrays
+
+```lith
+arr values = [10, 20, 30]
+values[1] = 25
+
+int first = values[0]
+```
+
+Array element type is inferred from the literal. The self-hosted compiler supports indexing, assignment, and array iteration for the current parity surface.
 
 ## Loops
 
-```luna
+```lith
+int i = 0
 while [i lt 10] [
     i = i add 1
 ]
@@ -91,14 +98,28 @@ loop item in values [
 ]
 ```
 
-`break` and `continue` are supported by the bootstrap compiler for `while` loops. The higher-level `loop item in values` form remains Stage-0-only parity work.
+`break` and `continue` are supported in the current loop forms.
 
-## Bootstrap runtime surface
+## Structs
 
-The generated C uses a small runtime for operations needed by the self-hosted compiler:
+```lith
+struct Token [
+    int kind
+    str text
+    int line
+]
+
+ptr Token tokens = sys.alloc 2
+tokens[0].kind = 1
+```
+
+## Runtime surface
+
+The current compiler/runtime surface includes:
 
 - `io.read_text path`
 - `io.write_text path, text`
+- `io.print value`
 - `str.len value`
 - `str.at value, index`
 - `str.slice value, start, end`
@@ -108,11 +129,12 @@ The generated C uses a small runtime for operations needed by the self-hosted co
 - `str.trim value`
 - `str.chr code`
 - `int.str value`
-
-Stage 0 additionally recognizes `io.print`, `sys.alloc`, `sys.realloc`, and `sys.free` lowering used by the broader reference example.
+- `sys.alloc count`
+- `sys.realloc ptr, count`
+- `sys.free ptr`
 
 ## Self-hosting
 
-`compiler/lunac.luna` contains a lexer, precedence parser, statement parser, two-pass function emitter, and C backend written in Luna. `make selfhost` proves the bootstrap by producing compiler generations until Stage 2, Stage 3, and Stage 4 generated C are byte-for-byte identical.
+The current compiler source lives in ordered modules under `compiler/src/*.lith`. The build concatenates those modules into the compiler source, bootstraps Stage 1 with the trusted Python LLVM backend, then later generations are compiled by Lith itself.
 
-A feature is considered self-hosted only after the Luna compiler itself can parse and emit it and the fixed-point test continues to pass. See `docs/SELF_HOSTING.md` for the bootstrap chain.
+The historical bootstrap implementation and runtime still contain internal `luna`/`lunac` names from the project's previous name. Those are compatibility implementation details, not the public language name.

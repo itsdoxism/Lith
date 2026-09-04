@@ -1,0 +1,195 @@
+fn precedence [str op] int [
+    if [str.eq op, 'or'] [ = 1 ]
+    if [str.eq op, 'and'] [ = 2 ]
+    if [str.eq op, 'eq'] [ = 3 ]
+    if [str.eq op, 'ne'] [ = 3 ]
+    if [str.eq op, 'gt'] [ = 3 ]
+    if [str.eq op, 'lt'] [ = 3 ]
+    if [str.eq op, 'ge'] [ = 3 ]
+    if [str.eq op, 'le'] [ = 3 ]
+    if [str.eq op, 'add'] [ = 4 ]
+    if [str.eq op, 'sub'] [ = 4 ]
+    if [str.eq op, 'mul'] [ = 5 ]
+    if [str.eq op, 'div'] [ = 5 ]
+    if [str.eq op, 'mod'] [ = 5 ]
+    = 0
+]
+
+fn starts_expr [int unused] int [
+    if [str.eq g_kind, 'int'] [ = 1 ]
+    if [str.eq g_kind, 'float'] [ = 1 ]
+    if [str.eq g_kind, 'str'] [ = 1 ]
+    if [str.eq g_kind, 'id'] [ = 1 ]
+    = 0
+]
+
+fn mapped_name [str name] str [
+    if [str.eq name, 'io.read_text'] [ = 'luna_read_text' ]
+    if [str.eq name, 'io.write_text'] [ = 'luna_write_text' ]
+    if [str.eq name, 'str.len'] [ = 'luna_str_len' ]
+    if [str.eq name, 'str.at'] [ = 'luna_str_at' ]
+    if [str.eq name, 'str.slice'] [ = 'luna_str_slice' ]
+    if [str.eq name, 'str.concat'] [ = 'luna_str_concat' ]
+    if [str.eq name, 'str.eq'] [ = 'luna_str_eq' ]
+    if [str.eq name, 'str.starts'] [ = 'luna_str_starts' ]
+    if [str.eq name, 'str.trim'] [ = 'luna_str_trim' ]
+    if [str.eq name, 'str.chr'] [ = 'luna_str_chr' ]
+    if [str.eq name, 'int.str'] [ = 'luna_int_str' ]
+    = name
+]
+
+fn builtin_ret [str name] str [
+    if [str.eq name, 'io.read_text'] [ = 'str' ]
+    if [str.eq name, 'io.write_text'] [ = 'int' ]
+    if [str.eq name, 'str.len'] [ = 'int' ]
+    if [str.eq name, 'str.at'] [ = 'int' ]
+    if [str.eq name, 'str.slice'] [ = 'str' ]
+    if [str.eq name, 'str.concat'] [ = 'str' ]
+    if [str.eq name, 'str.eq'] [ = 'int' ]
+    if [str.eq name, 'str.starts'] [ = 'int' ]
+    if [str.eq name, 'str.trim'] [ = 'str' ]
+    if [str.eq name, 'str.chr'] [ = 'str' ]
+    if [str.eq name, 'int.str'] [ = 'str' ]
+    = map_get g_fn_ret, name
+]
+
+fn builtin_argc [str name] int [
+    if [str.eq name, 'io.read_text'] [ = 1 ]
+    if [str.eq name, 'io.write_text'] [ = 2 ]
+    if [str.eq name, 'str.len'] [ = 1 ]
+    if [str.eq name, 'str.at'] [ = 2 ]
+    if [str.eq name, 'str.slice'] [ = 3 ]
+    if [str.eq name, 'str.concat'] [ = 2 ]
+    if [str.eq name, 'str.eq'] [ = 2 ]
+    if [str.eq name, 'str.starts'] [ = 2 ]
+    if [str.eq name, 'str.trim'] [ = 1 ]
+    if [str.eq name, 'str.chr'] [ = 1 ]
+    if [str.eq name, 'int.str'] [ = 1 ]
+    str n = map_get g_fn_argc, name
+    if [str.eq n, ''] [ = 0 ]
+    # Function calls in the bootstrap source never need this numeric value for user functions.
+    = 0
+]
+
+fn builtin_param [str name, int index] str [
+    if [str.eq name, 'io.read_text'] [ = 'str' ]
+    if [str.eq name, 'io.write_text'] [ = 'str' ]
+    if [str.eq name, 'str.len'] [ = 'str' ]
+    if [str.eq name, 'str.at'] [
+        if [index eq 0] [ = 'str' ]
+        = 'int'
+    ]
+    if [str.eq name, 'str.slice'] [
+        if [index eq 0] [ = 'str' ]
+        = 'int'
+    ]
+    if [str.eq name, 'str.concat'] [ = 'str' ]
+    if [str.eq name, 'str.eq'] [ = 'str' ]
+    if [str.eq name, 'str.starts'] [ = 'str' ]
+    if [str.eq name, 'str.trim'] [ = 'str' ]
+    if [str.eq name, 'str.chr'] [ = 'int' ]
+    if [str.eq name, 'int.str'] [ = 'int' ]
+    str key = fn_param_key name, index
+    = map_get g_fn_params, key
+]
+
+fn boolify [str op, str typ] str [
+    if [str.eq typ, 'bool'] [ = op ]
+    str r = new_reg 0
+    if [str.eq typ, 'str' or str.starts typ, 'ptr '] [
+        str s = str.concat r, ' = icmp ne ptr '
+        s = str.concat s, op
+        s = str.concat s, ', null'
+        emit_inst s
+        = r
+    ]
+    str s2 = str.concat r, ' = icmp ne i32 '
+    s2 = str.concat s2, op
+    s2 = str.concat s2, ', 0'
+    emit_inst s2
+    = r
+]
+
+fn intify [str op, str typ] str [
+    if [str.eq typ, 'int' or str.eq typ, 'char'] [ = op ]
+    if [str.eq typ, 'bool'] [
+        str r = new_reg 0
+        str s = str.concat r, ' = zext i1 '
+        s = str.concat s, op
+        s = str.concat s, ' to i32'
+        emit_inst s
+        = r
+    ]
+    = op
+]
+
+fn cast_value [str op, str from, str to] str [
+    if [str.eq from, to] [ = op ]
+    if [str.eq to, 'bool'] [ = boolify op, from ]
+    if [str.eq to, 'int'] [ = intify op, from ]
+    if [str.eq to, 'char'] [ = intify op, from ]
+    if [str.eq to, 'str' and str.starts from, 'ptr '] [ = op ]
+    if [str.starts to, 'ptr ' and str.eq from, 'str'] [ = op ]
+    if [str.starts to, 'ptr ' and str.starts from, 'ptr '] [ = op ]
+    = op
+]
+
+fn emit_binary [str op, str left, str lt, str right, str rt] str [
+    if [str.eq op, 'and' or str.eq op, 'or'] [
+        str a = boolify left, lt
+        str b = boolify right, rt
+        str r = new_reg 0
+        str inst = 'and'
+        if [str.eq op, 'or'] [ inst = 'or' ]
+        str s = str.concat r, ' = '
+        s = str.concat s, inst
+        s = str.concat s, ' i1 '
+        s = str.concat s, a
+        s = str.concat s, ', '
+        s = str.concat s, b
+        emit_inst s
+        g_expr_type = 'bool'
+        g_expr_addr = ''
+        = r
+    ]
+    if [str.eq op, 'eq' or str.eq op, 'ne' or str.eq op, 'gt' or str.eq op, 'lt' or str.eq op, 'ge' or str.eq op, 'le'] [
+        str a = intify left, lt
+        str b = intify right, rt
+        str pred = 'eq'
+        if [str.eq op, 'ne'] [ pred = 'ne' ]
+        if [str.eq op, 'gt'] [ pred = 'sgt' ]
+        if [str.eq op, 'lt'] [ pred = 'slt' ]
+        if [str.eq op, 'ge'] [ pred = 'sge' ]
+        if [str.eq op, 'le'] [ pred = 'sle' ]
+        str r = new_reg 0
+        str s = str.concat r, ' = icmp '
+        s = str.concat s, pred
+        s = str.concat s, ' i32 '
+        s = str.concat s, a
+        s = str.concat s, ', '
+        s = str.concat s, b
+        emit_inst s
+        g_expr_type = 'bool'
+        g_expr_addr = ''
+        = r
+    ]
+    str a2 = intify left, lt
+    str b2 = intify right, rt
+    str inst2 = 'add'
+    if [str.eq op, 'sub'] [ inst2 = 'sub' ]
+    if [str.eq op, 'mul'] [ inst2 = 'mul' ]
+    if [str.eq op, 'div'] [ inst2 = 'sdiv' ]
+    if [str.eq op, 'mod'] [ inst2 = 'srem' ]
+    str r2 = new_reg 0
+    str s2 = str.concat r2, ' = '
+    s2 = str.concat s2, inst2
+    s2 = str.concat s2, ' i32 '
+    s2 = str.concat s2, a2
+    s2 = str.concat s2, ', '
+    s2 = str.concat s2, b2
+    emit_inst s2
+    g_expr_type = 'int'
+    g_expr_addr = ''
+    = r2
+]
+
