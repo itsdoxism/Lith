@@ -11,7 +11,7 @@ LLVM_RUNTIME := runtime/luna_runtime.ll
 BOOTSTRAP_PARTS := \
 	compiler/bootstrap/lunac_llvm.part1.luna \
 	compiler/bootstrap/lunac_llvm.part2.luna \
-	compiler/bootstrap/lunac_llvm.part3.luna
+	compiler/bootstrap/lunac_llvm.part3.memory.luna
 BOOTSTRAP_SRC := $(BUILD)/lunac_llvm.luna
 SELF_LUNAC := $(BUILD)/lunac
 
@@ -66,9 +66,9 @@ llvm-selfhost:
 	PYTHON=$(PYTHON) CLANG=$(CLANG) BUILD=$(BUILD)/llvm-selfhost LLVM_LUNAC=$(LLVM_LUNAC) LLVM_RUNTIME=$(LLVM_RUNTIME) sh tests/llvm_self_host.sh
 
 driver-check: compiler
-	sh bin/luna tests/llvm_runtime.luna -o $(BUILD)/driver-test
-	@test "$$($(BUILD)/driver-test)" = 'a=hello n=5 eq=1 starts=1 cut=ell ch=! num=42'
-	@echo 'Native Luna driver: passed'
+	sh bin/luna tests/selfhost_memory.luna -o $(BUILD)/driver-test
+	$(BUILD)/driver-test
+	@echo 'Native Luna driver + pointer memory builtins: passed'
 
 test: compiler $(BUILD)/reference $(BUILD)/reference-llvm
 	$(BUILD)/reference
