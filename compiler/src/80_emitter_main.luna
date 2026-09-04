@@ -1,0 +1,173 @@
+fn emit_struct_ir [int unused] int [
+    expect_id 'struct'
+    str name = g_text
+    next_tok 0
+    expect_kind 'lb'
+    skip_nl 0
+    str fields = ''
+    int first = 1
+    while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
+        str typ = parse_type 0
+        next_tok 0
+        if [first eq 0] [ fields = str.concat fields, ', ' ]
+        fields = str.concat fields, storage_type typ
+        first = 0
+        skip_nl 0
+    ]
+    expect_kind 'rb'
+    str s = str.concat '%struct.', name
+    s = str.concat s, ' = type { '
+    s = str.concat s, fields
+    s = str.concat s, ' }'
+    emit_line s
+    emit_line ''
+    = 0
+]
+
+fn emit_global_ir [int unused] int [
+    str typ = parse_type 0
+    str name = g_text
+    next_tok 0
+    expect_kind 'assign'
+    str value = '0'
+    if [str.eq g_kind, 'str'] [ value = string_const g_text ]
+    else [ value = g_text ]
+    next_tok 0
+    str s = str.concat '@', name
+    s = str.concat s, ' = global '
+    s = str.concat s, storage_type typ
+    s = str.concat s, ' '
+    s = str.concat s, value
+    emit_line s
+    = 0
+]
+
+fn emit_function_ir [int unused] int [
+    expect_id 'fn'
+    str name = g_text
+    next_tok 0
+    expect_kind 'lb'
+    str args = ''
+    str prologue = ''
+    g_locals = ''
+    g_local_addrs = ''
+    g_temp = 0
+    int first = 1
+    while [not str.eq g_kind, 'rb'] [
+        str typ = parse_type 0
+        str pname = g_text
+        next_tok 0
+        g_locals = map_put g_locals, pname, typ
+        str paddr = new_reg 0
+        g_local_addrs = map_put g_local_addrs, pname, paddr
+        if [first eq 0] [ args = str.concat args, ', ' ]
+        args = str.concat args, storage_type typ
+        args = str.concat args, ' %arg.'
+        args = str.concat args, pname
+        str p1 = str.concat '  ', paddr
+        p1 = str.concat p1, ' = alloca '
+        p1 = str.concat p1, storage_type typ
+        prologue = str.concat prologue, p1
+        prologue = str.concat prologue, str.chr 10
+        str p2 = str.concat '  store ', storage_type typ
+        p2 = str.concat p2, ' %arg.'
+        p2 = str.concat p2, pname
+        p2 = str.concat p2, ', ptr '
+        p2 = str.concat p2, paddr
+        prologue = str.concat prologue, p2
+        prologue = str.concat prologue, str.chr 10
+        first = 0
+        if [str.eq g_kind, 'comma'] [ next_tok 0 ]
+        else [ break ]
+    ]
+    expect_kind 'rb'
+    str ret = 'int'
+    if [str.eq g_kind, 'id'] [
+        ret = g_text
+        next_tok 0
+    ]
+    g_current_ret = ret
+    g_label = 0
+    g_terminated = 0
+    g_break_label = ''
+    g_continue_label = ''
+    str head = str.concat 'define ', storage_type ret
+    head = str.concat head, ' @'
+    head = str.concat head, name
+    head = str.concat head, '('
+    head = str.concat head, args
+    head = str.concat head, ') {'
+    emit_line head
+    emit_label 'entry'
+    g_out = str.concat g_out, prologue
+    parse_block_ir 0
+    if [g_terminated eq 0] [ emit_return ret, default_value ret ]
+    emit_line '}'
+    emit_line ''
+    = 0
+]
+
+fn emit_header [int unused] int [
+    emit_line '; Luna self-hosted LLVM backend'
+    emit_line ''
+    emit_line 'declare ptr @luna_read_text(ptr)'
+    emit_line 'declare i32 @luna_write_text(ptr, ptr)'
+    emit_line 'declare i32 @luna_str_len(ptr)'
+    emit_line 'declare i32 @luna_str_at(ptr, i32)'
+    emit_line 'declare ptr @luna_str_slice(ptr, i32, i32)'
+    emit_line 'declare ptr @luna_str_concat(ptr, ptr)'
+    emit_line 'declare i32 @luna_str_eq(ptr, ptr)'
+    emit_line 'declare i32 @luna_str_starts(ptr, ptr)'
+    emit_line 'declare ptr @luna_str_trim(ptr)'
+    emit_line 'declare ptr @luna_str_chr(i32)'
+    emit_line 'declare ptr @luna_int_str(i32)'
+    emit_line 'declare ptr @malloc(i64)'
+    emit_line 'declare ptr @realloc(ptr, i64)'
+    emit_line 'declare void @free(ptr)'
+    emit_line 'declare i32 @puts(ptr)'
+    emit_line ''
+    = 0
+]
+
+fn compile_llvm [str source] str [
+    g_error = 0
+    g_out = ''
+    g_strings = ''
+    g_string_id = 0
+    scan_top source
+    emit_header 0
+    reset source
+    skip_nl 0
+    while [not str.eq g_kind, 'eof'] [
+        if [str.eq g_kind, 'id' and str.eq g_text, 'use'] [
+            next_tok 0
+            next_tok 0
+        ]
+        else [
+            if [str.eq g_kind, 'id' and str.eq g_text, 'struct'] [ emit_struct_ir 0 ]
+            else [
+                if [str.eq g_kind, 'id' and str.eq g_text, 'fn'] [ emit_function_ir 0 ]
+                else [
+                    if [str.eq g_kind, 'id' and is_decl_type g_text] [ emit_global_ir 0 ]
+                    else [
+                        fail 'unsupported top level item'
+                        = ''
+                    ]
+                ]
+            ]
+        ]
+        skip_nl 0
+    ]
+    g_out = str.concat g_out, g_strings
+    = g_out
+]
+
+fn main [int argc, ptr str argv] int [
+    if [argc lt 3] [ = 2 ]
+    str source = io.read_text argv[1]
+    str ir = compile_llvm source
+    if [g_error] [ = 1 ]
+    int ok = io.write_text argv[2], ir
+    if [ok eq 0] [ = 1 ]
+    = 0
+]
