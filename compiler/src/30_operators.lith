@@ -210,7 +210,8 @@ fn can_cast [str from, str to] int [
 
 fn can_explicit_cast [str from, str to] int [
     if [can_cast from, to] [ = 1 ]
-    if [str.eq from, 'float' and [str.eq to, 'int' or str.eq to, 'char']] [ = 1 ]
+    if [str.eq from, 'float' and str.eq to, 'int'] [ = 1 ]
+    if [str.eq from, 'float' and str.eq to, 'char'] [ = 1 ]
     if [str.eq from, 'float' and str.eq to, 'bool'] [ = 1 ]
     if [str.eq from, 'bool' and str.eq to, 'float'] [ = 1 ]
     = 0
@@ -258,7 +259,7 @@ fn explicit_cast [str op, str from, str to, int line, int start, int finish] str
 ]
 
 fn emit_numeric_compare [str op, str left, str lt, str right, str rt] str [
-    if [[is_integer_like lt and is_integer_like rt]] [
+    if [is_integer_like lt and is_integer_like rt] [
         str pred = 'sgt'
         if [str.eq op, 'lt'] [ pred = 'slt' ]
         if [str.eq op, 'ge'] [ pred = 'sge' ]
@@ -331,6 +332,14 @@ fn emit_numeric_arithmetic [str op, str left, str lt, str right, str rt] str [
     emit_inst fs
     g_expr_type = 'float'
     = fr
+]
+
+fn numeric_pair [str lt, str rt] int [
+    if [is_integer_like lt and is_integer_like rt] [ = 1 ]
+    if [str.eq lt, 'float' and str.eq rt, 'float'] [ = 1 ]
+    if [str.eq lt, 'float' and is_integer_like rt] [ = 1 ]
+    if [is_integer_like lt and str.eq rt, 'float'] [ = 1 ]
+    = 0
 ]
 
 fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op_start, int op_end] str [
@@ -426,7 +435,7 @@ fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op
             = ir
         ]
 
-        if [[str.eq lt, 'float' or is_integer_like lt] and [str.eq rt, 'float' or is_integer_like rt]] [
+        if [numeric_pair lt, rt] [
             str fa = left
             str fb = right
             if [is_integer_like lt] [ fa = floatify left, lt ]
@@ -453,7 +462,7 @@ fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op
     ]
 
     if [str.eq op, 'gt' or str.eq op, 'lt' or str.eq op, 'ge' or str.eq op, 'le'] [
-        if [[is_integer_like lt or str.eq lt, 'float'] and [is_integer_like rt or str.eq rt, 'float']] [
+        if [numeric_pair lt, rt] [
             str cmp = emit_numeric_compare op, left, lt, right, rt
             g_expr_type = 'bool'
             g_expr_addr = ''
@@ -466,7 +475,7 @@ fn emit_binary [str op, str left, str lt, str right, str rt, int op_line, int op
     ]
 
     if [str.eq op, 'add' or str.eq op, 'sub' or str.eq op, 'mul' or str.eq op, 'div' or str.eq op, 'mod'] [
-        if [[is_integer_like lt or str.eq lt, 'float'] and [is_integer_like rt or str.eq rt, 'float']] [
+        if [numeric_pair lt, rt] [
             str out = emit_numeric_arithmetic op, left, lt, right, rt
             g_expr_addr = ''
             = out
