@@ -39,7 +39,10 @@ fn path_normalize [str path] str [
             continue
         ]
         int out_len = str.len out
-        if [out_len gt 0 and str.at out, out_len sub 1 ne 47] [ out = str.concat out, '/' ]
+        if [out_len gt 0] [
+            int last = out_len sub 1
+            if [str.at out, last ne 47] [ out = str.concat out, '/' ]
+        ]
         out = str.concat out, part
     ]
 
@@ -97,7 +100,7 @@ fn load_module [str path] str [
     if [not str.eq seen, ''] [ = '' ]
 
     str source = io.read_text canonical
-    if [source eq null] [
+    if [not source] [
         str missing = 'cannot read module: '
         missing = str.concat missing, canonical
         module_fail missing
@@ -119,8 +122,11 @@ fn load_module [str path] str [
                 if [not str.eq child_source, ''] [
                     dependencies = str.concat dependencies, child_source
                     int dep_n = str.len dependencies
-                    if [dep_n gt 0 and str.at dependencies, dep_n sub 1 ne 10] [
-                        dependencies = str.concat dependencies, str.chr 10
+                    if [dep_n gt 0] [
+                        int dep_last = dep_n sub 1
+                        if [str.at dependencies, dep_last ne 10] [
+                            dependencies = str.concat dependencies, str.chr 10
+                        ]
                     ]
                 ]
             ]
@@ -135,7 +141,10 @@ fn load_module [str path] str [
     out = str.concat out, module_marker canonical
     out = str.concat out, source
     int out_n = str.len out
-    if [out_n gt 0 and str.at out, out_n sub 1 ne 10] [ out = str.concat out, str.chr 10 ]
+    if [out_n gt 0] [
+        int out_last = out_n sub 1
+        if [str.at out, out_last ne 10] [ out = str.concat out, str.chr 10 ]
+    ]
     = out
 ]
 
