@@ -10,9 +10,10 @@ LLVM_RUNTIME=${LLVM_RUNTIME:-runtime/luna_runtime.ll}
 mkdir -p "$BUILD"
 SRC="$BUILD/lunac_llvm.luna"
 cat \
+  compiler/bootstrap/lunac_llvm.part0.structs.luna \
   compiler/bootstrap/lunac_llvm.part1.luna \
-  compiler/bootstrap/lunac_llvm.part2.luna \
-  compiler/bootstrap/lunac_llvm.part3.memory.luna \
+  compiler/bootstrap/lunac_llvm.part2.structs.luna \
+  compiler/bootstrap/lunac_llvm.part3.structs.luna \
   > "$SRC"
 
 # Stage 1 is bootstrapped by the trusted Python LLVM backend.
@@ -28,7 +29,7 @@ cat \
 
 "$BUILD/stage3" "$SRC" "$BUILD/stage4.ll"
 
-# A stable compiler must reach a textual IR fixed point after the memory parity change.
+# A stable compiler must still reach a textual IR fixed point after struct parity.
 cmp "$BUILD/stage2.ll" "$BUILD/stage3.ll"
 cmp "$BUILD/stage3.ll" "$BUILD/stage4.ll"
 
