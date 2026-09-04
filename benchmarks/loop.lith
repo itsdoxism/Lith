@@ -1,0 +1,14 @@
+fn main [] int [
+    str data = io.read_text 'benchmarks/input.txt'
+    int n = str.len data
+    int limit = n mul 40000
+    int i = 0
+    int sum = 0
+    while [i lt limit] [
+        int r = i mod 97
+        sum = sum add r
+        i = i add 1
+    ]
+    io.print 'sum: [sum]'
+    = 0
+]
