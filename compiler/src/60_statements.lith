@@ -187,27 +187,25 @@ fn parse_stmt_ir [int unused] int [
     ]
     if [str.eq g_kind, 'assign'] [
         next_tok 0
-        if [str.eq g_kind, 'id' and str.eq g_text, 'match'] [
-            = emit_match_return g_current_ret
-        ]
         str rv = parse_expr 0
         str rt = g_expr_type
+        str ra = g_expr_addr
         rv = checked_cast rv, rt, g_current_ret
+        rv = materialize_array_value rv, g_current_ret, ra
         emit_return g_current_ret, rv
         = 0
     ]
     if [str.eq g_kind, 'id' and str.eq g_text, 'return'] [
         next_tok 0
-        if [str.eq g_kind, 'id' and str.eq g_text, 'match'] [
-            = emit_match_return g_current_ret
-        ]
         str rv2 = parse_expr 0
         str rt2 = g_expr_type
+        str ra2 = g_expr_addr
         rv2 = checked_cast rv2, rt2, g_current_ret
+        rv2 = materialize_array_value rv2, g_current_ret, ra2
         emit_return g_current_ret, rv2
         = 0
     ]
-    if [str.eq g_kind, 'id' and is_decl_type g_text] [
+    if [str.eq g_kind, 'id' and is_type_start g_text] [
         = parse_decl_ir 0
     ]
     if [str.eq g_kind, 'id' and str.eq g_text, 'io'] [
@@ -235,7 +233,9 @@ fn parse_stmt_ir [int unused] int [
             rhs = parse_expr 0
         ]
         str rhs_type = g_expr_type
+        str rhs_addr = g_expr_addr
         rhs = checked_cast rhs, rhs_type, lhs_type
+        rhs = materialize_array_value rhs, lhs_type, rhs_addr
         if [writable eq 0] [ = 0 ]
         str st = str.concat 'store ', storage_type lhs_type
         st = str.concat st, ' '
