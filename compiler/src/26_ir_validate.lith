@@ -1,0 +1,241 @@
+# Structural and SSA validation for target-neutral Lith IR.
+
+fn ir_validation_error [str msg] int [
+    str full = str.concat 'internal IR validation error: ', msg
+    fatal_prev full
+    = 0
+]
+
+fn ir_record_shape_valid [str line] int [
+    int n = str.len line
+    int i = 0
+    int pipes = 0
+    while [i lt n] [
+        if [str.at line, i eq 124] [ pipes = pipes add 1 ]
+        i = i add 1
+    ]
+    = pipes eq 5
+]
+
+fn ir_known_op [str op] int [
+    if [str.eq op, 'label' or str.eq op, 'branch' or str.eq op, 'cbranch' or str.eq op, 'unreachable'] [ = 1 ]
+    if [str.eq op, 'stack_alloc' or str.eq op, 'load' or str.eq op, 'store'] [ = 1 ]
+    if [str.eq op, 'array_addr' or str.eq op, 'pointer_addr' or str.eq op, 'field_addr'] [ = 1 ]
+    if [str.eq op, 'truthy_pointer' or str.eq op, 'truthy_float' or str.eq op, 'truthy_int' or str.eq op, 'not_bool'] [ = 1 ]
+    if [str.eq op, 'bool_to_int' or str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [ = 1 ]
+    if [str.eq op, 'logic' or str.eq op, 'compare_int' or str.eq op, 'compare_bool' or str.eq op, 'compare_pointer' or str.eq op, 'compare_float'] [ = 1 ]
+    if [str.eq op, 'arith_int' or str.eq op, 'arith_float' or str.eq op, 'call' or str.eq op, 'phi'] [ = 1 ]
+    if [str.eq op, 'return' or str.eq op, 'alloc' or str.eq op, 'realloc' or str.eq op, 'free' or str.eq op, 'print_line'] [ = 1 ]
+    = 0
+]
+
+fn ir_value_is_temp [str value] int [ = str.starts value, '$v' ]
+
+fn ir_require_value [str defs, str value, str context] int [
+    if [not ir_value_is_temp value] [ = 1 ]
+    str known = map_get defs, value
+    if [str.eq known, '1'] [ = 1 ]
+    str msg = str.concat context, ' uses undefined value '
+    msg = str.concat msg, value
+    ir_validation_error msg
+    = 0
+]
+
+fn ir_define_value [str defs, str value] str [
+    if [not ir_value_is_temp value] [
+        ir_validation_error 'instruction result is not a temporary value'
+        = defs
+    ]
+    str existing = map_get defs, value
+    if [str.eq existing, '1'] [
+        str msg = str.concat 'duplicate value definition ', value
+        ir_validation_error msg
+        = defs
+    ]
+    = map_put defs, value, '1'
+]
+
+fn ir_collect_labels [str code] str [
+    str labels = ''
+    int n = str.len code
+    int i = 0
+    while [i lt n and g_fatal_error eq 0] [
+        int start = i
+        while [i lt n and str.at code, i ne 10] [ i = i add 1 ]
+        str line = str.slice code, start, i
+        if [not ir_record_shape_valid line] [ ir_validation_error 'malformed record shape' ]
+        else [
+            str op = ir_record_field line, 0
+            if [str.eq op, 'label'] [
+                str name = ir_record_field line, 1
+                if [str.eq name, ''] [ ir_validation_error 'empty label name' ]
+                else [
+                    str existing_label = map_get labels, name
+                    if [str.eq existing_label, '1'] [
+                        str msg = str.concat 'duplicate label ', name
+                        ir_validation_error msg
+                    ]
+                    else [ labels = map_put labels, name, '1' ]
+                ]
+                sys.free name
+            ]
+            sys.free op
+        ]
+        sys.free line
+        if [i lt n] [ i = i add 1 ]
+    ]
+    = labels
+]
+
+fn ir_validate_arg_values [str defs, str args, int count, str context] int [
+    int i = 0
+    while [i lt count and g_fatal_error eq 0] [
+        str pair = ir_list_item args, i
+        str typ = ir_pair_left pair
+        str value = ir_pair_right pair
+        if [str.eq typ, '' or str.eq value, ''] [ ir_validation_error 'malformed typed argument payload' ]
+        else [ ir_require_value defs, value, context ]
+        sys.free pair
+        sys.free typ
+        sys.free value
+        i = i add 1
+    ]
+    = g_fatal_error eq 0
+]
+
+fn ir_validate_record [str line, str labels, str defs] str [
+    str op = ir_record_field line, 0
+    str a = ir_record_field line, 1
+    str b = ir_record_field line, 2
+    str c = ir_record_field line, 3
+    str d = ir_record_field line, 4
+    str e = ir_record_field line, 5
+    str next_defs = defs
+
+    if [not ir_known_op op] [
+        str msg = str.concat 'unknown opcode ', op
+        ir_validation_error msg
+    ]
+    else [
+        if [str.eq op, 'branch'] [
+            str branch_label = map_get labels, a
+            if [not str.eq branch_label, '1'] [
+                str msg2 = str.concat 'branch targets missing label ', a
+                ir_validation_error msg2
+            ]
+        ]
+        if [str.eq op, 'cbranch'] [
+            ir_require_value defs, a, 'cbranch'
+            str true_label = map_get labels, b
+            str false_label = map_get labels, c
+            if [not str.eq true_label, '1'] [ ir_validation_error 'cbranch true target is missing' ]
+            if [not str.eq false_label, '1'] [ ir_validation_error 'cbranch false target is missing' ]
+        ]
+        if [str.eq op, 'load'] [
+            ir_require_value defs, c, 'load'
+            next_defs = ir_define_value next_defs, a
+        ]
+        if [str.eq op, 'store'] [
+            ir_require_value defs, b, 'store value'
+            ir_require_value defs, c, 'store address'
+        ]
+        if [str.eq op, 'stack_alloc'] [ next_defs = ir_define_value next_defs, a ]
+        if [str.eq op, 'array_addr' or str.eq op, 'pointer_addr' or str.eq op, 'field_addr'] [
+            ir_require_value defs, c, op
+            if [not str.eq op, 'field_addr'] [ ir_require_value defs, d, op ]
+            next_defs = ir_define_value next_defs, a
+        ]
+        if [str.eq op, 'truthy_pointer' or str.eq op, 'truthy_float' or str.eq op, 'truthy_int' or str.eq op, 'not_bool'] [
+            ir_require_value defs, b, op
+            next_defs = ir_define_value next_defs, a
+        ]
+        if [str.eq op, 'bool_to_int' or str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [
+            ir_require_value defs, b, op
+            next_defs = ir_define_value next_defs, a
+        ]
+        if [str.eq op, 'logic' or str.eq op, 'compare_int' or str.eq op, 'compare_bool' or str.eq op, 'compare_pointer' or str.eq op, 'compare_float' or str.eq op, 'arith_int' or str.eq op, 'arith_float'] [
+            ir_require_value defs, c, op
+            ir_require_value defs, d, op
+            next_defs = ir_define_value next_defs, a
+        ]
+        if [str.eq op, 'call'] [
+            int argc = 0
+            int j = 0
+            int dn = str.len d
+            while [j lt dn] [
+                int ch = str.at d, j
+                if [ch ge 48 and ch le 57] [ argc = argc mul 10 add ch sub 48 ]
+                j = j add 1
+            ]
+            ir_validate_arg_values defs, e, argc, 'call argument'
+            next_defs = ir_define_value next_defs, a
+        ]
+        if [str.eq op, 'phi'] [
+            int count = 0
+            int k = 0
+            int cn = str.len c
+            while [k lt cn] [
+                int ch2 = str.at c, k
+                if [ch2 ge 48 and ch2 le 57] [ count = count mul 10 add ch2 sub 48 ]
+                k = k add 1
+            ]
+            int p = 0
+            while [p lt count and g_fatal_error eq 0] [
+                str pair2 = ir_list_item e, p
+                str value2 = ir_pair_left pair2
+                str pred = ir_pair_right pair2
+                ir_require_value defs, value2, 'phi'
+                str pred_known = map_get labels, pred
+                if [not str.eq pred_known, '1' and not str.eq pred, 'entry'] [ ir_validation_error 'phi predecessor label is missing' ]
+                sys.free pair2
+                sys.free value2
+                sys.free pred
+                p = p add 1
+            ]
+            next_defs = ir_define_value next_defs, a
+        ]
+        if [str.eq op, 'return'] [ ir_require_value defs, b, 'return' ]
+        if [str.eq op, 'alloc'] [
+            ir_require_value defs, c, 'alloc count'
+            next_defs = ir_define_value next_defs, a
+        ]
+        if [str.eq op, 'realloc'] [
+            ir_require_value defs, c, 'realloc pointer'
+            ir_require_value defs, d, 'realloc count'
+            next_defs = ir_define_value next_defs, a
+        ]
+        if [str.eq op, 'free' or str.eq op, 'print_line'] [ ir_require_value defs, a, op ]
+    ]
+
+    sys.free op
+    sys.free a
+    sys.free b
+    sys.free c
+    sys.free d
+    sys.free e
+    = next_defs
+]
+
+fn ir_validate_function [str code] int [
+    str labels = ir_collect_labels code
+    if [g_fatal_error] [ = 0 ]
+    str defs = ''
+    int n = str.len code
+    int i = 0
+    int terminated = 0
+    while [i lt n and g_fatal_error eq 0] [
+        int start = i
+        while [i lt n and str.at code, i ne 10] [ i = i add 1 ]
+        str line = str.slice code, start, i
+        str op = ir_record_field line, 0
+        if [terminated and not str.eq op, 'label'] [ ir_validation_error 'instruction appears after a terminator without a label' ]
+        if [str.eq op, 'label'] [ terminated = 0 ]
+        defs = ir_validate_record line, labels, defs
+        if [str.eq op, 'branch' or str.eq op, 'cbranch' or str.eq op, 'return' or str.eq op, 'unreachable'] [ terminated = 1 ]
+        sys.free op
+        sys.free line
+        if [i lt n] [ i = i add 1 ]
+    ]
+    if [g_fatal_error eq 0 and terminated eq 0] [ ir_validation_error 'function ends without a terminator' ]
+    = g_fatal_error eq 0
+]

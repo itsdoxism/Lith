@@ -67,3 +67,38 @@ compiler/src/backend/
 
 This keeps backend replacement a code-generation project instead of a compiler
 frontend rewrite.
+
+## Middle-end validation and optimization
+
+Function bodies pass through a target-neutral middle-end before any backend
+lowering:
+
+```text
+parsed + typed function
+        |
+        v
+raw Lith IR
+        |
+        v
+IR validator
+        |
+        v
+IR optimizer
+        |
+        v
+IR validator
+        |
+        v
+selected backend
+```
+
+The validator checks the internal record shape, opcode set, SSA temporary
+use/definition ordering, branch targets, phi predecessors, call payloads, and
+basic-block termination. A validation failure is a compiler-internal error and
+prevents backend lowering.
+
+The first optimizer is intentionally conservative. It performs target-neutral
+integer/boolean constant propagation and folding, plus simplification of
+constant conditional branches. Backend-specific peepholes remain the backend's
+responsibility; language semantics and middle-end transforms must not depend on
+LLVM spelling.

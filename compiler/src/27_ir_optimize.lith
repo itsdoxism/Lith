@@ -1,0 +1,275 @@
+# Small target-neutral Lith IR optimization pass.
+# It intentionally starts conservative: integer/bool constants are propagated
+# through pure local operations and constant conditional branches are folded.
+
+fn ir_is_int_constant [str value] int [
+    int n = str.len value
+    if [n eq 0] [ = 0 ]
+    int i = 0
+    if [str.at value, 0 eq 45] [
+        if [n eq 1] [ = 0 ]
+        i = 1
+    ]
+    while [i lt n] [
+        int ch = str.at value, i
+        if [ch lt 48 or ch gt 57] [ = 0 ]
+        i = i add 1
+    ]
+    = 1
+]
+
+fn ir_parse_int_constant [str value] int [
+    int n = str.len value
+    int i = 0
+    int negative = 0
+    if [n gt 0 and str.at value, 0 eq 45] [ negative = 1 i = 1 ]
+    int out = 0
+    while [i lt n] [
+        out = out mul 10 add str.at value, i sub 48
+        i = i add 1
+    ]
+    if [negative] [ = 0 sub out ]
+    = out
+]
+
+fn ir_resolve_alias [str aliases, str value] str [
+    if [not ir_value_is_temp value] [ = value ]
+    str found = map_get aliases, value
+    if [str.eq found, ''] [ = value ]
+    = found
+]
+
+fn ir_encode_record [str op, str a, str b, str c, str d, str e] str [
+    str line = str.slice '', 0, 0
+    line = ir_append_owned line, op
+    line = ir_append_owned line, '|'
+    line = ir_append_owned line, a
+    line = ir_append_owned line, '|'
+    line = ir_append_owned line, b
+    line = ir_append_owned line, '|'
+    line = ir_append_owned line, c
+    line = ir_append_owned line, '|'
+    line = ir_append_owned line, d
+    line = ir_append_owned line, '|'
+    line = ir_append_owned line, e
+    line = ir_append_owned line, g_newline
+    = line
+]
+
+fn ir_rewrite_args [str aliases, str args, int count] str [
+    str out = ''
+    int i = 0
+    while [i lt count] [
+        str typ = ir_arg_type args, i
+        str value = ir_arg_value args, i
+        str resolved = ir_resolve_alias aliases, value
+        out = ir_args_add out, i, typ, resolved
+        sys.free typ
+        sys.free value
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_parse_count_text [str text] int [
+    int out = 0
+    int i = 0
+    int n = str.len text
+    while [i lt n] [
+        int ch = str.at text, i
+        if [ch ge 48 and ch le 57] [ out = out mul 10 add ch sub 48 ]
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_rewrite_phi_payload [str aliases, str payload, int count] str [
+    str out = ''
+    int i = 0
+    while [i lt count] [
+        str pair = ir_list_item payload, i
+        str value = ir_pair_left pair
+        str pred = ir_pair_right pair
+        str resolved = ir_resolve_alias aliases, value
+        str next = ir_arg_pair resolved, pred
+        out = str.concat out, next
+        sys.free pair
+        sys.free value
+        sys.free pred
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_fold_compare_int [str op, int left, int right] int [
+    if [str.eq op, 'eq'] [ = left eq right ]
+    if [str.eq op, 'ne'] [ = left ne right ]
+    if [str.eq op, 'gt'] [ = left gt right ]
+    if [str.eq op, 'lt'] [ = left lt right ]
+    if [str.eq op, 'ge'] [ = left ge right ]
+    if [str.eq op, 'le'] [ = left le right ]
+    = 0
+]
+
+fn ir_optimize_function [str code] str [
+    str aliases = ''
+    str out = str.slice '', 0, 0
+    int n = str.len code
+    int i = 0
+    while [i lt n] [
+        int start = i
+        while [i lt n and str.at code, i ne 10] [ i = i add 1 ]
+        str line = str.slice code, start, i
+        str op = ir_record_field line, 0
+        str a = ir_record_field line, 1
+        str b = ir_record_field line, 2
+        str c = ir_record_field line, 3
+        str d = ir_record_field line, 4
+        str e = ir_record_field line, 5
+        int emit = 1
+
+        if [str.eq op, 'load'] [ c = ir_resolve_alias aliases, c ]
+        if [str.eq op, 'store'] [
+            b = ir_resolve_alias aliases, b
+            c = ir_resolve_alias aliases, c
+        ]
+        if [str.eq op, 'array_addr' or str.eq op, 'pointer_addr'] [
+            c = ir_resolve_alias aliases, c
+            d = ir_resolve_alias aliases, d
+        ]
+        if [str.eq op, 'field_addr'] [ c = ir_resolve_alias aliases, c ]
+        if [str.eq op, 'truthy_pointer' or str.eq op, 'truthy_float'] [ b = ir_resolve_alias aliases, b ]
+        if [str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [ b = ir_resolve_alias aliases, b ]
+
+        if [str.eq op, 'truthy_int'] [
+            b = ir_resolve_alias aliases, b
+            if [ir_is_int_constant b] [
+                int bv = ir_parse_int_constant b
+                str folded = '0'
+                if [bv ne 0] [ folded = '1' ]
+                aliases = map_put aliases, a, folded
+                emit = 0
+            ]
+        ]
+        if [str.eq op, 'not_bool'] [
+            b = ir_resolve_alias aliases, b
+            if [str.eq b, '0' or str.eq b, '1'] [
+                str folded2 = '0'
+                if [str.eq b, '0'] [ folded2 = '1' ]
+                aliases = map_put aliases, a, folded2
+                emit = 0
+            ]
+        ]
+        if [str.eq op, 'bool_to_int'] [
+            b = ir_resolve_alias aliases, b
+            if [str.eq b, '0' or str.eq b, '1'] [
+                aliases = map_put aliases, a, b
+                emit = 0
+            ]
+        ]
+        if [str.eq op, 'logic'] [
+            c = ir_resolve_alias aliases, c
+            d = ir_resolve_alias aliases, d
+            int c_bool = str.eq c, '0' or str.eq c, '1'
+            int d_bool = str.eq d, '0' or str.eq d, '1'
+            if [c_bool and d_bool] [
+                int lv = ir_parse_int_constant c
+                int rv = ir_parse_int_constant d
+                int result = 0
+                if [str.eq b, 'and'] [ result = lv and rv ]
+                if [str.eq b, 'or'] [ result = lv or rv ]
+                str result_text = int.str result
+                aliases = map_put aliases, a, result_text
+                emit = 0
+            ]
+        ]
+        if [str.eq op, 'arith_int'] [
+            c = ir_resolve_alias aliases, c
+            d = ir_resolve_alias aliases, d
+            if [ir_is_int_constant c and ir_is_int_constant d] [
+                int left = ir_parse_int_constant c
+                int right = ir_parse_int_constant d
+                int can_fold = 1
+                int result2 = 0
+                if [str.eq b, 'add'] [ result2 = left add right ]
+                else [
+                    if [str.eq b, 'sub'] [ result2 = left sub right ]
+                    else [
+                        if [str.eq b, 'mul'] [ result2 = left mul right ]
+                        else [
+                            if [str.eq b, 'div'] [
+                                if [right eq 0] [ can_fold = 0 ]
+                                else [ result2 = left div right ]
+                            ]
+                            else [
+                                if [str.eq b, 'mod'] [
+                                    if [right eq 0] [ can_fold = 0 ]
+                                    else [ result2 = left mod right ]
+                                ]
+                                else [ can_fold = 0 ]
+                            ]
+                        ]
+                    ]
+                ]
+                if [can_fold] [
+                    str result_text2 = int.str result2
+                    aliases = map_put aliases, a, result_text2
+                    emit = 0
+                ]
+            ]
+        ]
+        if [str.eq op, 'compare_int' or str.eq op, 'compare_bool'] [
+            c = ir_resolve_alias aliases, c
+            d = ir_resolve_alias aliases, d
+            if [ir_is_int_constant c and ir_is_int_constant d] [
+                int left2 = ir_parse_int_constant c
+                int right2 = ir_parse_int_constant d
+                int result3 = ir_fold_compare_int b, left2, right2
+                str result_text3 = int.str result3
+                aliases = map_put aliases, a, result_text3
+                emit = 0
+            ]
+        ]
+        if [str.eq op, 'compare_pointer' or str.eq op, 'compare_float' or str.eq op, 'arith_float'] [
+            c = ir_resolve_alias aliases, c
+            d = ir_resolve_alias aliases, d
+        ]
+        if [str.eq op, 'cbranch'] [
+            a = ir_resolve_alias aliases, a
+            if [str.eq a, '0' or str.eq a, '1'] [
+                str target = c
+                if [str.eq a, '1'] [ target = b ]
+                op = 'branch'
+                a = target
+                b = ''
+                c = ''
+            ]
+        ]
+        if [str.eq op, 'return'] [ b = ir_resolve_alias aliases, b ]
+        if [str.eq op, 'alloc'] [ c = ir_resolve_alias aliases, c ]
+        if [str.eq op, 'realloc'] [
+            c = ir_resolve_alias aliases, c
+            d = ir_resolve_alias aliases, d
+        ]
+        if [str.eq op, 'free' or str.eq op, 'print_line'] [ a = ir_resolve_alias aliases, a ]
+        if [str.eq op, 'call'] [
+            int argc = ir_parse_count_text d
+            str rewritten = ir_rewrite_args aliases, e, argc
+            e = rewritten
+        ]
+        if [str.eq op, 'phi'] [
+            int pc = ir_parse_count_text c
+            str rewritten2 = ir_rewrite_phi_payload aliases, e, pc
+            e = rewritten2
+        ]
+
+        if [emit] [
+            str encoded = ir_encode_record op, a, b, c, d, e
+            out = ir_append_owned out, encoded
+            sys.free encoded
+        ]
+        sys.free line
+        if [i lt n] [ i = i add 1 ]
+    ]
+    = out
+]

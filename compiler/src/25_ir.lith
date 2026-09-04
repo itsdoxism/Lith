@@ -405,18 +405,25 @@ fn ir_begin_function [str name, str ret, str params, int count] int [
 ]
 
 fn ir_end_function [int unused] int [
+    if [ir_validate_function g_ir_code eq 0] [ = 0 ]
+    str optimized = ir_optimize_function g_ir_code
+    if [ir_validate_function optimized eq 0] [
+        sys.free optimized
+        = 0
+    ]
     backend_begin_function g_ir_function_name, g_ir_function_ret, g_ir_function_params, g_ir_function_param_count
-    int n = str.len g_ir_code
+    int n = str.len optimized
     int i = 0
     while [i lt n] [
         int start = i
-        while [i lt n and str.at g_ir_code, i ne 10] [ i = i add 1 ]
-        str line = str.slice g_ir_code, start, i
+        while [i lt n and str.at optimized, i ne 10] [ i = i add 1 ]
+        str line = str.slice optimized, start, i
         backend_lower_record line
         sys.free line
         if [i lt n] [ i = i add 1 ]
     ]
     backend_end_function 0
+    sys.free optimized
     = 0
 ]
 

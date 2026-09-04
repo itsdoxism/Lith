@@ -14,6 +14,8 @@ SELF_MODULES := \
 	compiler/src/10_lexer.lith \
 	compiler/src/20_symbols.lith \
 	compiler/src/25_ir.lith \
+	compiler/src/26_ir_validate.lith \
+	compiler/src/27_ir_optimize.lith \
 	compiler/src/backend/llvm/25_core.lith \
 	compiler/src/backend/llvm/26_ops.lith \
 	compiler/src/backend/llvm/27_lower.lith \
@@ -30,7 +32,7 @@ SELF_MODULES := \
 SELF_SRC := $(BUILD)/lithc.lith
 SELF_LITHC := $(BUILD)/lithc
 
-.PHONY: all compiler driver-check semantic-check core-check backend-boundary-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
+.PHONY: all compiler driver-check semantic-check core-check backend-boundary-check ir-middle-end-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
 
 all: compiler
 
@@ -100,6 +102,9 @@ core-check: compiler
 backend-boundary-check:
 	sh tests/backend_boundary.sh
 
+ir-middle-end-check: compiler
+	BUILD=$(BUILD)/ir-middle-end LITHC=bin/lithc CLANG=$(CLANG) LLVM_RUNTIME=$(LLVM_RUNTIME) sh tests/ir_middle_end.sh
+
 reference-selfhost: compiler
 	BUILD=$(BUILD) sh tests/reference_selfhost.sh
 
@@ -108,6 +113,7 @@ test: compiler $(BUILD)/reference $(BUILD)/reference-llvm
 	$(BUILD)/reference-llvm
 	$(PYTHON) -m py_compile $(BOOTSTRAP_C) $(BOOTSTRAP_LLVM)
 	$(MAKE) backend-boundary-check
+	$(MAKE) ir-middle-end-check
 	$(MAKE) driver-check
 	$(MAKE) semantic-check
 	$(MAKE) core-check
