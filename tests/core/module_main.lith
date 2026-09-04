@@ -1,0 +1,9 @@
+use './modules/math.lith'
+use './modules/bridge.lith'
+use './modules/math.lith'
+
+fn main [] int [
+    if [imported_value [] ne 21] [ = 1 ]
+    if [bridged_value [] ne 21] [ = 2 ]
+    = 0
+]
