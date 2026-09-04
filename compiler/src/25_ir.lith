@@ -6,8 +6,16 @@
 # string contents here: literals are opaque $s:<id> handles, so the separators
 # cannot collide with an operand.
 
-str g_ir_code = ''
-int g_ir_code_owned = 0
+# Storage v2 keeps records in growable parallel arrays. The old serialized
+# representation is produced only at compatibility boundaries while validator
+# and optimizer migration is in progress.
+ptr str g_ir_ops = null
+ptr str g_ir_as = null
+ptr str g_ir_bs = null
+ptr str g_ir_cs = null
+ptr str g_ir_ds = null
+ptr str g_ir_es = null
+int g_ir_capacity = 0
 int g_ir_count = 0
 str g_ir_function_name = ''
 str g_ir_function_ret = 'int'
@@ -106,24 +114,71 @@ fn ir_field_type_at [str fields, int index] str [
     = map_get fields, key
 ]
 
+fn ir_copy_text [str text] str [ = str.slice text, 0, str.len text ]
+
+fn ir_storage_release_records [int unused] int [
+    int i = 0
+    while [i lt g_ir_count] [
+        sys.free g_ir_ops[i]
+        sys.free g_ir_as[i]
+        sys.free g_ir_bs[i]
+        sys.free g_ir_cs[i]
+        sys.free g_ir_ds[i]
+        sys.free g_ir_es[i]
+        i = i add 1
+    ]
+    g_ir_count = 0
+    = 0
+]
+
+fn ir_storage_ensure [int wanted] int [
+    if [g_ir_capacity ge wanted] [ = 0 ]
+    int next = g_ir_capacity
+    if [next lt 64] [ next = 64 ]
+    while [next lt wanted] [ next = next mul 2 ]
+    if [g_ir_capacity eq 0] [
+        g_ir_ops = sys.alloc next
+        g_ir_as = sys.alloc next
+        g_ir_bs = sys.alloc next
+        g_ir_cs = sys.alloc next
+        g_ir_ds = sys.alloc next
+        g_ir_es = sys.alloc next
+    ]
+    else [
+        g_ir_ops = sys.realloc g_ir_ops, next
+        g_ir_as = sys.realloc g_ir_as, next
+        g_ir_bs = sys.realloc g_ir_bs, next
+        g_ir_cs = sys.realloc g_ir_cs, next
+        g_ir_ds = sys.realloc g_ir_ds, next
+        g_ir_es = sys.realloc g_ir_es, next
+    ]
+    g_ir_capacity = next
+    = 0
+]
+
+fn ir_storage_serialize [int unused] str [
+    str out = str.slice '', 0, 0
+    int i = 0
+    while [i lt g_ir_count] [
+        str line = ir_encode_record g_ir_ops[i], g_ir_as[i], g_ir_bs[i], g_ir_cs[i], g_ir_ds[i], g_ir_es[i]
+        out = ir_append_owned out, line
+        sys.free line
+        i = i add 1
+    ]
+    = out
+]
+
 fn ir_record [str op, str a, str b, str c, str d, str e] int [
-    str line = str.slice '', 0, 0
-    line = ir_append_owned line, op
-    line = ir_append_owned line, '|'
-    line = ir_append_owned line, a
-    line = ir_append_owned line, '|'
-    line = ir_append_owned line, b
-    line = ir_append_owned line, '|'
-    line = ir_append_owned line, c
-    line = ir_append_owned line, '|'
-    line = ir_append_owned line, d
-    line = ir_append_owned line, '|'
-    line = ir_append_owned line, e
-    line = ir_append_owned line, g_newline
-    g_ir_code = ir_append_owned g_ir_code, line
-    sys.free line
     int index = g_ir_count
-    g_ir_count = g_ir_count add 1
+    int wanted = index add 1
+    ir_storage_ensure wanted
+    g_ir_ops[index] = ir_copy_text op
+    g_ir_as[index] = ir_copy_text a
+    g_ir_bs[index] = ir_copy_text b
+    g_ir_cs[index] = ir_copy_text c
+    g_ir_ds[index] = ir_copy_text d
+    g_ir_es[index] = ir_copy_text e
+    g_ir_count = wanted
     = index
 ]
 
@@ -391,10 +446,7 @@ fn ir_struct_decl [str name, str fields, int count] int [ = backend_struct_decl 
 fn ir_global_decl [str name, str typ, str value] int [ = backend_global_decl name, typ, value ]
 
 fn ir_begin_function [str name, str ret, str params, int count] int [
-    if [g_ir_code_owned] [ sys.free g_ir_code ]
-    g_ir_code = str.slice '', 0, 0
-    g_ir_code_owned = 1
-    g_ir_count = 0
+    ir_storage_release_records 0
     g_ir_function_name = name
     g_ir_function_ret = ret
     g_ir_function_params = params
@@ -405,8 +457,13 @@ fn ir_begin_function [str name, str ret, str params, int count] int [
 ]
 
 fn ir_end_function [int unused] int [
-    if [ir_validate_function g_ir_code eq 0] [ = 0 ]
-    str optimized_v1 = ir_optimize_function g_ir_code
+    str raw = ir_storage_serialize 0
+    if [ir_validate_function raw eq 0] [
+        sys.free raw
+        = 0
+    ]
+    str optimized_v1 = ir_optimize_function raw
+    sys.free raw
     str optimized = ir_optimize_function_v2 optimized_v1
     sys.free optimized_v1
     if [ir_validate_function optimized eq 0] [
