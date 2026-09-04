@@ -1,0 +1,148 @@
+str g_module_seen = ''
+str g_module_stack = ''
+int g_module_error = 0
+str g_module_error_message = ''
+
+fn module_fail [str msg] int [
+    if [g_module_error eq 0] [ g_module_error_message = msg ]
+    g_module_error = 1
+    = 0
+]
+
+fn path_pop [str path] str [
+    int n = str.len path
+    if [n eq 0] [ = '' ]
+    int i = n sub 1
+    while [i ge 0 and str.at path, i ne 47] [ i = i sub 1 ]
+    if [i lt 0] [ = '' ]
+    if [i eq 0] [ = '/' ]
+    = str.slice path, 0, i
+]
+
+fn path_normalize [str path] str [
+    int n = str.len path
+    int absolute = 0
+    if [n gt 0 and str.at path, 0 eq 47] [ absolute = 1 ]
+    str out = ''
+    if [absolute] [ out = '/' ]
+
+    int i = 0
+    while [i lt n] [
+        while [i lt n and str.at path, i eq 47] [ i = i add 1 ]
+        if [i ge n] [ break ]
+        int start = i
+        while [i lt n and str.at path, i ne 47] [ i = i add 1 ]
+        str part = str.slice path, start, i
+        if [str.eq part, '' or str.eq part, '.'] [ continue ]
+        if [str.eq part, '..'] [
+            if [not str.eq out, '' and not str.eq out, '/'] [ out = path_pop out ]
+            continue
+        ]
+        int out_len = str.len out
+        if [out_len gt 0 and str.at out, out_len sub 1 ne 47] [ out = str.concat out, '/' ]
+        out = str.concat out, part
+    ]
+
+    if [str.eq out, ''] [ = '.' ]
+    = out
+]
+
+fn path_dirname [str path] str [
+    str clean = path_normalize path
+    int n = str.len clean
+    int i = n sub 1
+    while [i ge 0 and str.at clean, i ne 47] [ i = i sub 1 ]
+    if [i lt 0] [ = '.' ]
+    if [i eq 0] [ = '/' ]
+    = str.slice clean, 0, i
+]
+
+fn resolve_import_path [str importer, str spec] str [
+    int n = str.len spec
+    if [n gt 0 and str.at spec, 0 eq 47] [ = path_normalize spec ]
+    str base = path_dirname importer
+    str joined = str.concat base, '/'
+    joined = str.concat joined, spec
+    = path_normalize joined
+]
+
+fn source_import_path [str line] str [
+    str clean = str.trim line
+    if [not str.starts clean, 'use '] [ = '' ]
+    int n = str.len clean
+    if [n lt 6] [ = '' ]
+    if [str.at clean, 4 ne 39] [ = '' ]
+    int i = 5
+    while [i lt n and str.at clean, i ne 39] [ i = i add 1 ]
+    if [i ge n] [ = '' ]
+    = str.slice clean, 5, i
+]
+
+fn module_marker [str path] str [
+    str out = '#@module '
+    out = str.concat out, path
+    = str.concat out, str.chr 10
+]
+
+fn load_module [str path] str [
+    str canonical = path_normalize path
+    str active = map_get g_module_stack, canonical
+    if [not str.eq active, ''] [
+        str msg = 'module import cycle: '
+        msg = str.concat msg, canonical
+        module_fail msg
+        = ''
+    ]
+    str seen = map_get g_module_seen, canonical
+    if [not str.eq seen, ''] [ = '' ]
+
+    str source = io.read_text canonical
+    if [source eq null] [
+        str missing = 'cannot read module: '
+        missing = str.concat missing, canonical
+        module_fail missing
+        = ''
+    ]
+
+    g_module_stack = map_put g_module_stack, canonical, '1'
+    str dependencies = ''
+    int n = str.len source
+    int start = 0
+    int i = 0
+    while [i le n] [
+        if [i eq n or str.at source, i eq 10] [
+            str line = str.slice source, start, i
+            str spec = source_import_path line
+            if [not str.eq spec, ''] [
+                str child = resolve_import_path canonical, spec
+                str child_source = load_module child
+                if [not str.eq child_source, ''] [
+                    dependencies = str.concat dependencies, child_source
+                    int dep_n = str.len dependencies
+                    if [dep_n gt 0 and str.at dependencies, dep_n sub 1 ne 10] [
+                        dependencies = str.concat dependencies, str.chr 10
+                    ]
+                ]
+            ]
+            start = i add 1
+        ]
+        i = i add 1
+    ]
+
+    g_module_stack = map_put g_module_stack, canonical, ''
+    g_module_seen = map_put g_module_seen, canonical, '1'
+    str out = dependencies
+    out = str.concat out, module_marker canonical
+    out = str.concat out, source
+    int out_n = str.len out
+    if [out_n gt 0 and str.at out, out_n sub 1 ne 10] [ out = str.concat out, str.chr 10 ]
+    = out
+]
+
+fn load_program [str entry] str [
+    g_module_seen = ''
+    g_module_stack = ''
+    g_module_error = 0
+    g_module_error_message = ''
+    = load_module entry
+]
