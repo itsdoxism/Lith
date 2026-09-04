@@ -34,18 +34,7 @@ fn fn_param_key [str name, int index] str [
     = str.concat r, int.str index
 ]
 
-fn parse_type [int unused] str [
-    str t = g_text
-    next_tok 0
-    if [str.eq t, 'ptr'] [
-        str elem = g_text
-        next_tok 0
-        t = str.concat 'ptr ', elem
-    ]
-    = t
-]
-
-fn is_decl_type [str s] int [
+fn is_builtin_type_name [str s] int [
     if [str.eq s, 'int'] [ = 1 ]
     if [str.eq s, 'float'] [ = 1 ]
     if [str.eq s, 'str'] [ = 1 ]
@@ -54,6 +43,52 @@ fn is_decl_type [str s] int [
     if [str.eq s, 'ptr'] [ = 1 ]
     if [str.eq s, 'arr'] [ = 1 ]
     = 0
+]
+
+fn is_type_name [str s] int [
+    if [is_builtin_type_name s] [ = 1 ]
+    if [is_struct_type s] [ = 1 ]
+    = 0
+]
+
+fn parse_type [int unused] str [
+    if [not str.eq g_kind, 'id'] [
+        fatal 'expected type name'
+        = 'int'
+    ]
+    str t = g_text
+    next_tok 0
+    if [str.eq t, 'ptr'] [
+        if [not str.eq g_kind, 'id'] [
+            fatal 'pointer type expects an element type'
+            = 'ptr int'
+        ]
+        str elem = parse_type 0
+        = str.concat 'ptr ', elem
+    ]
+    if [str.eq t, 'arr'] [
+        # Bare `arr name = [...]` keeps local literal inference.
+        if [not str.eq g_kind, 'id' or not is_type_name g_text] [ = 'arr' ]
+        str elem2 = parse_type 0
+        if [not str.eq g_kind, 'int'] [
+            fatal 'explicit array type expects a fixed integer length'
+            = 'arr 0 int'
+        ]
+        str count = g_text
+        next_tok 0
+        str r = str.concat 'arr ', count
+        r = str.concat r, ' '
+        = str.concat r, elem2
+    ]
+    = t
+]
+
+fn is_decl_type [str s] int [
+    = is_builtin_type_name s
+]
+
+fn is_type_start [str s] int [
+    = is_type_name s
 ]
 
 fn llvm_type [str t] str [
@@ -66,10 +101,22 @@ fn llvm_type [str t] str [
     = t
 ]
 
+fn is_aggregate_type [str t] int [
+    if [str.starts t, 'arr '] [ = 1 ]
+    if [is_struct_type t] [ = 1 ]
+    = 0
+]
+
+fn abi_type [str t] str [
+    if [is_aggregate_type t] [ = storage_type t ]
+    = llvm_type t
+]
+
 fn default_value [str t] str [
     if [str.eq t, 'str'] [ = 'null' ]
     if [str.starts t, 'ptr '] [ = 'null' ]
     if [str.eq t, 'float'] [ = '0.0' ]
+    if [is_aggregate_type t] [ = 'zeroinitializer' ]
     = '0'
 ]
 
@@ -145,8 +192,20 @@ fn emit_cbranch [str cond, str yes, str no] int [
     = 0
 ]
 
+fn materialize_array_value [str op, str typ, str addr] str [
+    if [not str.starts typ, 'arr '] [ = op ]
+    if [str.eq addr, ''] [ = op ]
+    str r = new_reg 0
+    str s = str.concat r, ' = load '
+    s = str.concat s, storage_type typ
+    s = str.concat s, ', ptr '
+    s = str.concat s, addr
+    emit_inst s
+    = r
+]
+
 fn emit_return [str typ, str op] int [
-    str s = str.concat '  ret ', llvm_type typ
+    str s = str.concat '  ret ', abi_type typ
     s = str.concat s, ' '
     s = str.concat s, op
     emit_line s
