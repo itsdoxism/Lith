@@ -1,0 +1,14 @@
+use io
+use str
+use int
+
+fn main [] [
+    str a = str.concat 'hel', 'lo'
+    int n = str.len a
+    int e = str.eq a, 'hello'
+    int s = str.starts a, 'he'
+    str cut = str.slice a, 1, 4
+    str ch = str.chr 33
+    str num = int.str 42
+    io.print 'a=[a] n=[n] eq=[e] starts=[s] cut=[cut] ch=[ch] num=[num]'
+]
