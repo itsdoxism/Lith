@@ -1,0 +1,5 @@
+use './nested/more.lith'
+
+fn bridged_value [] int [
+    = nested_value [] add 1
+]
