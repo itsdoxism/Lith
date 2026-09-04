@@ -1,0 +1,7 @@
+fn main [] int [
+    int a = 'bad'
+    int b = 1 add 'x'
+    int c = true mul 4
+    break
+    = 'no'
+]
