@@ -15,6 +15,7 @@ SELF_MODULES := \
 	compiler/src/20_symbols.lith \
 	compiler/src/25_ir.lith \
 	compiler/src/26_ir_validate.lith \
+	compiler/src/27_ir_index.lith \
 	compiler/src/27_ir_optimize.lith \
 	compiler/src/backend/llvm/25_core.lith \
 	compiler/src/backend/llvm/26_ops.lith \
