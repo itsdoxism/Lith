@@ -110,3 +110,21 @@ Side-effecting operations (`call`, `store`, allocation, free, printing, and
 control-flow terminators) are never removed by dead-value elimination. Backend-
 specific peepholes remain the backend's responsibility; language semantics and
 middle-end transforms must not depend on LLVM spelling.
+
+## Indexed IR storage
+
+Optimizer v2 keeps each function in one compact serialized arena and builds a
+small integer record-start index for repeated middle-end access. This avoids
+materializing per-record heap strings or rescanning the entire function for
+every pass. Dead-value analysis now runs backward over the index and emits the
+kept records in one forward pass.
+
+The shared string-table helpers also avoid allocating temporary key/value
+slices for every `map_get` probe; only a matched value is materialized. This is
+important because symbol tables, validator state, and optimizer alias maps all
+use the same compact map representation.
+
+On the self-host compiler workload used during this migration, peak memory fell
+from roughly 631 MB to about 52 MB while preserving the fixed point. The number
+is environment-specific and is documented as a development measurement rather
+than a language guarantee.
