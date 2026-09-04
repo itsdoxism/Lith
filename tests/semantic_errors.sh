@@ -24,8 +24,8 @@ check_error() {
         cat "$log" >&2
         exit 1
     fi
-    if ! grep -F 'error: line ' "$log" >/dev/null; then
-        echo "missing source line header for $file" >&2
+    if ! grep -F "tests/errors/$file:" "$log" >/dev/null; then
+        echo "missing source file + local line header for $file" >&2
         cat "$log" >&2
         exit 1
     fi
@@ -52,7 +52,7 @@ check_multiple_errors() {
         exit 1
     fi
 
-    count=$(grep -c '^error: line ' "$log" || true)
+    count=$(grep -c '^error: ' "$log" || true)
     if [ "$count" -lt 5 ]; then
         echo "expected at least 5 diagnostics for $file, got $count" >&2
         cat "$log" >&2
