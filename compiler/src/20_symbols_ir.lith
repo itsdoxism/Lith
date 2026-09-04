@@ -80,7 +80,15 @@ fn parse_type [int unused] str [
         r = str.concat r, ' '
         = str.concat r, elem2
     ]
-    = t
+    if [str.eq t, 'int'] [ = t ]
+    if [str.eq t, 'float'] [ = t ]
+    if [str.eq t, 'str'] [ = t ]
+    if [str.eq t, 'bool'] [ = t ]
+    if [str.eq t, 'char'] [ = t ]
+    if [is_struct_type t] [ = t ]
+    str msg = str.concat 'unknown type: ', t
+    fail_prev msg
+    = 'int'
 ]
 
 fn is_decl_type [str s] int [
