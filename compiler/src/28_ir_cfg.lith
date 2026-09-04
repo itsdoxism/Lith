@@ -30,8 +30,10 @@ fn ir_cfg_label_count [str code, ptr int starts, int record_count] int [
 ]
 
 fn ir_cfg_edge_key [str from, str to] str [
-    str key = str.concat from, '~'
-    = str.concat key, to
+    str prefix = str.concat from, '~'
+    str key = str.concat prefix, to
+    sys.free prefix
+    = key
 ]
 
 fn ir_cfg_note_edge [str edges, str from, str to] str [
@@ -47,7 +49,6 @@ fn ir_cfg_has_edge [str edges, str from, str to] int [
     str known = map_get edges, key
     int yes = str.eq known, '1'
     sys.free key
-    sys.free known
     = yes
 ]
 
@@ -67,7 +68,7 @@ fn ir_cfg_collect_edges [str code, ptr int starts, int record_count] str [
 
         if [str.eq op, 'label'] [
             if [terminated eq 0] [ edges = ir_cfg_note_edge edges, current, a ]
-            current = a
+            current = str.slice a, 0, str.len a
             terminated = 0
         ]
         else [
@@ -149,11 +150,13 @@ fn ir_cfg_rewrite_phi [str reachable, str edges, str block_label, str a, str b, 
         str pair = ir_list_item e, i
         str value = ir_pair_left pair
         str pred = ir_pair_right pair
-        if [ir_cfg_is_reachable reachable, pred and ir_cfg_has_edge edges, pred, block_label] [
-            str next = ir_arg_pair value, pred
-            payload = ir_append_owned payload, next
-            sys.free next
-            kept = kept add 1
+        if [ir_cfg_is_reachable reachable, pred] [
+            if [ir_cfg_has_edge edges, pred, block_label] [
+                str next = ir_arg_pair value, pred
+                payload = ir_append_owned payload, next
+                sys.free next
+                kept = kept add 1
+            ]
         ]
         sys.free pair
         sys.free value
@@ -191,7 +194,7 @@ fn ir_cfg_prune_unreachable [str code] str [
         str a = ir_index_field code, starts, i, 1
 
         if [str.eq op, 'label'] [
-            block_label = a
+            block_label = str.slice a, 0, str.len a
             block_reachable = ir_cfg_is_reachable reachable, a
         ]
 
