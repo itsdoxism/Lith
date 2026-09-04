@@ -1,0 +1,5 @@
+use './modules/bad_type.lith'
+
+fn main [] int [
+    = broken []
+]
