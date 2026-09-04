@@ -4,74 +4,88 @@ Luna is an experimental **zero-shift programming language** built around ergonom
 
 ## Current status
 
-Luna is now self-hosting and has a **C-free LLVM native path**.
-
-The project keeps two bootstrap tracks on purpose:
+Luna is self-hosting and its current native path is:
 
 ```text
-legacy bootstrap:
-Luna -> C -> native
-
-current native path:
-Luna -> LLVM IR -> native
+Luna source -> self-hosted Luna compiler -> LLVM IR -> native binary
 ```
 
-The trusted bootstrap implementations are still kept in Python so a fresh checkout can rebuild the compiler from a conventional host toolchain. The important part is that the compiler implementation itself also exists in Luna and reaches a fixed point when it compiles itself.
+C is no longer an intermediate in the normal LLVM path. The older C-emitting compiler and C runtime remain in the repository only as bootstrap/regression references.
 
-### LLVM self-host chain
-
-The self-hosted LLVM compiler source is stored in `compiler/bootstrap/lunac_llvm.part*.luna` and reconstructed by the test harness:
-
-```text
-Luna LLVM compiler source
-        |
-        v
-Python LLVM bootstrap -> stage1.ll -> native stage1
-                                      |
-                                      v
-                                  stage2.ll -> native stage2
-                                      |
-                                      v
-                                  stage3.ll -> native stage3
-                                      |
-                                      v
-                                  stage4.ll
-```
-
-The test verifies:
+The LLVM-emitting compiler reaches a textual fixed point during self-compilation:
 
 ```text
 stage2.ll == stage3.ll == stage4.ll
 ```
 
-That textual LLVM IR fixed point is the bootstrap proof for the LLVM-emitting compiler.
+That is the executable bootstrap proof that the Luna-written compiler can reproduce itself.
 
-The older C-emitting self-hosted compiler remains in `compiler/lunac.luna` as a regression/bootstrap reference. It also has its own Stage 2/3/4 fixed-point test.
+## Build the compiler
 
-## Try it
+Requirements:
 
-Requirements for the current path:
-
-- Python 3.10+ for the initial trusted bootstrap
+- Python 3.10+ only for the first bootstrap from a clean checkout
 - Clang with LLVM IR support
 
-Build and run the LLVM-backed reference program:
+Bootstrap the native compiler once:
 
 ```sh
-make
-./build/reference-llvm
+make compiler
 ```
 
-Or explicitly:
+This creates:
+
+```text
+build/lunac
+```
+
+The build chain is:
+
+```text
+trusted Python LLVM bootstrap
+        -> stage1 LLVM
+        -> native stage1 Luna compiler
+        -> stage2 LLVM
+        -> build/lunac
+```
+
+After `build/lunac` exists, ordinary Luna compilation no longer needs Python.
+
+## Compile Luna programs
+
+Compile directly to a native executable:
 
 ```sh
-make llvm
+./bin/luna hello.luna -o hello
+./hello
 ```
+
+Emit LLVM IR instead:
+
+```sh
+./bin/luna hello.luna --emit-llvm hello.ll
+```
+
+Use the compiler frontend directly:
+
+```sh
+./bin/lunac hello.luna hello.ll
+```
+
+`bin/luna` uses the self-hosted `build/lunac` compiler and then asks Clang to turn the generated LLVM IR plus `runtime/luna_runtime.ll` into the final executable.
+
+## Tests
 
 Run the LLVM self-host fixed-point proof:
 
 ```sh
 make llvm-selfhost
+```
+
+Run the user-facing native driver smoke test:
+
+```sh
+make driver-check
 ```
 
 Run every regression, including the older C bootstrap path:
@@ -83,27 +97,26 @@ make test
 ## Repository layout
 
 ```text
-compiler/lunac.py                         trusted C bootstrap compiler
-compiler/lunac.luna                       self-hosted C-emitting Luna compiler
-compiler/lunac_llvm.py                    trusted LLVM bootstrap backend
-compiler/bootstrap/lunac_llvm.part*.luna  self-hosted LLVM-emitting compiler source
-runtime/luna_runtime.c                    legacy/bootstrap C runtime
-runtime/luna_runtime.ll                   LLVM runtime module
-tests/self_host.sh                        C emitter fixed-point proof
-tests/llvm_backend.sh                     LLVM backend transition/runtime checks
-tests/llvm_self_host.sh                   LLVM emitter fixed-point proof
-examples/reference.luna                   executable language reference
+bin/luna                              Luna source -> native driver
+bin/lunac                             native self-hosted compiler launcher
+compiler/lunac.py                     trusted legacy C bootstrap compiler
+compiler/lunac.luna                   older self-hosted C-emitting compiler
+compiler/lunac_llvm.py                trusted LLVM bootstrap backend
+compiler/bootstrap/lunac_llvm.part*   self-hosted LLVM-emitting compiler source
+runtime/luna_runtime.c                legacy/bootstrap C runtime
+runtime/luna_runtime.ll               current LLVM runtime module
+tests/self_host.sh                    legacy C emitter fixed-point proof
+tests/llvm_backend.sh                 LLVM backend transition/runtime checks
+tests/llvm_self_host.sh               LLVM emitter fixed-point proof
+examples/reference.luna               executable language reference
 ```
 
-## Direction
+## Next milestones
 
-The C intermediate is no longer required by Luna's current native backend. Clang/LLVM is still used to turn generated LLVM IR into machine code.
-
-The next milestones are:
-
-1. move remaining Stage-0-only language features into the self-hosted LLVM compiler,
-2. make the Luna LLVM compiler the normal user-facing `lunac`,
-3. shrink Python to a bootstrap-only artifact,
-4. eventually add object-file or direct machine-code emission if Luna should also stop depending on LLVM for final code generation.
+1. close feature-parity gaps in the self-hosted LLVM compiler (`struct`, arrays, match, allocation helpers and the remaining broader Stage-0 surface),
+2. consolidate the split bootstrap source into the canonical Luna compiler source,
+3. reduce Python to a bootstrap-only recovery artifact,
+4. grow the standard library/runtime surface,
+5. optionally add object-file or direct machine-code emission later if Luna should stop depending on LLVM for final code generation too.
 
 See `docs/LANGUAGE.md` and `docs/SELF_HOSTING.md` for the language and bootstrap notes.
