@@ -19,17 +19,15 @@ fn emit_struct_literal [str name] str [
     int too_many = 0
     while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
         str field = struct_field_name name, index
-        str value = parse_expr 0
-        str value_type = g_expr_type
-        str value_addr = g_expr_addr
         if [str.eq field, ''] [
+            # Consume the extra value so diagnostics can recover at the next
+            # comma/closing bracket instead of desynchronizing the parser.
+            str ignored = parse_expr 0
             if [too_many eq 0] [ fail_prev 'too many values in struct literal' ]
             too_many = 1
         ]
         else [
             str field_type = struct_field_type name, field
-            value = checked_cast value, value_type, field_type
-            value = materialize_array_value value, field_type, value_addr
             str field_index = struct_field_index name, field
             str field_addr = new_reg 0
             str gep = str.concat field_addr, ' = getelementptr inbounds '
@@ -39,7 +37,18 @@ fn emit_struct_literal [str name] str [
             gep = str.concat gep, ', i32 0, i32 '
             gep = str.concat gep, field_index
             emit_inst gep
-            store_typed_value field_addr, field_type, value
+
+            if [str.starts field_type, 'arr ' and str.eq g_kind, 'lb'] [
+                parse_array_literal_into field_addr, field_type
+            ]
+            else [
+                str value = parse_expr 0
+                str value_type = g_expr_type
+                str value_addr = g_expr_addr
+                value = checked_cast value, value_type, field_type
+                value = materialize_array_value value, field_type, value_addr
+                store_typed_value field_addr, field_type, value
+            ]
         ]
         index = index add 1
         if [str.eq g_kind, 'comma'] [ next_tok 0 ]
@@ -172,6 +181,15 @@ fn emit_match_expr [int unused] str [
     emit_inst phi
     g_expr_type = result_type
     g_expr_addr = ''
+
+    if [is_aggregate_type result_type] [
+        str result_addr = new_reg 0
+        str alloc2 = str.concat result_addr, ' = alloca '
+        alloc2 = str.concat alloc2, storage_type result_type
+        emit_inst alloc2
+        store_typed_value result_addr, result_type, out
+        g_expr_addr = result_addr
+    ]
     = out
 ]
 
