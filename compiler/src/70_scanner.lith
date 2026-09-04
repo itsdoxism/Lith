@@ -1,18 +1,18 @@
 fn parse_block_ir [int unused] int [
     expect_kind 'lb'
     skip_nl 0
-    while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
+    while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
         parse_stmt_ir 0
         skip_nl 0
     ]
-    expect_kind 'rb'
+    if [g_fatal_error eq 0] [ expect_kind 'rb' ]
     = 0
 ]
 
 fn skip_block [int unused] int [
     expect_kind 'lb'
     int depth = 1
-    while [depth gt 0 and not str.eq g_kind, 'eof'] [
+    while [depth gt 0 and not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
         if [str.eq g_kind, 'lb'] [ depth = depth add 1 ]
         if [str.eq g_kind, 'rb'] [ depth = depth sub 1 ]
         next_tok 0
@@ -32,7 +32,7 @@ fn scan_struct [int unused] int [
     expect_kind 'lb'
     skip_nl 0
     int index = 0
-    while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof'] [
+    while [not str.eq g_kind, 'rb' and not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
         str typ = parse_type 0
         if [str.eq typ, 'arr'] [ fail 'array struct fields are not supported yet' ]
         str field = g_text
@@ -48,7 +48,7 @@ fn scan_struct [int unused] int [
         index = index add 1
         skip_nl 0
     ]
-    expect_kind 'rb'
+    if [g_fatal_error eq 0] [ expect_kind 'rb' ]
     g_struct_counts = map_put g_struct_counts, name, int.str index
     = 0
 ]
@@ -65,7 +65,7 @@ fn scan_function [int unused] int [
     expect_kind 'lb'
     int argc = 0
     str param_names = ''
-    while [not str.eq g_kind, 'rb'] [
+    while [not str.eq g_kind, 'rb' and g_fatal_error eq 0] [
         str typ = parse_type 0
         if [str.eq typ, 'arr'] [ fail 'array parameters are not supported yet' ]
         str pname = g_text
@@ -82,6 +82,7 @@ fn scan_function [int unused] int [
         if [str.eq g_kind, 'comma'] [ next_tok 0 ]
         else [ break ]
     ]
+    if [g_fatal_error] [ = 0 ]
     expect_kind 'rb'
     str ret = 'int'
     if [str.eq g_kind, 'id'] [
@@ -107,7 +108,7 @@ fn scan_global [int unused] int [
     next_tok 0
     expect_kind 'assign'
     g_globals = map_put g_globals, name, typ
-    while [not str.eq g_kind, 'nl' and not str.eq g_kind, 'eof'] [ next_tok 0 ]
+    while [not str.eq g_kind, 'nl' and not str.eq g_kind, 'eof' and g_fatal_error eq 0] [ next_tok 0 ]
     = 0
 ]
 
@@ -121,7 +122,7 @@ fn scan_top [str source] int [
     g_struct_types = ''
     reset source
     skip_nl 0
-    while [not str.eq g_kind, 'eof'] [
+    while [not str.eq g_kind, 'eof' and g_fatal_error eq 0] [
         if [str.eq g_kind, 'id' and str.eq g_text, 'use'] [
             next_tok 0
             next_tok 0
@@ -132,7 +133,7 @@ fn scan_top [str source] int [
                 if [str.eq g_kind, 'id' and str.eq g_text, 'fn'] [ scan_function 0 ]
                 else [
                     if [str.eq g_kind, 'id' and is_decl_type g_text] [ scan_global 0 ]
-                    else [ = fail 'unsupported top level item' ]
+                    else [ = fatal 'unsupported top level item' ]
                 ]
             ]
         ]
