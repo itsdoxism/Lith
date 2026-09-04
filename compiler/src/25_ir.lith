@@ -472,7 +472,14 @@ fn ir_run_optimization_pipeline [str raw] str [
         sys.free next
         = ''
     ]
-    = next
+
+    str cfg = ir_cfg_prune_unreachable next
+    sys.free next
+    if [ir_validate_function cfg eq 0] [
+        sys.free cfg
+        = ''
+    ]
+    = cfg
 ]
 
 fn ir_end_function [int unused] int [
