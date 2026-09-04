@@ -1,0 +1,41 @@
+# Luna v1.3 executable feature reference
+use io
+use sys
+
+struct Token [
+    int kind
+    str text
+    int line
+]
+
+fn classify [int kind] str [
+    = match kind [
+        is 1 [ 'word' ]
+        is 2 [ 'number' ]
+        else [ 'unknown' ]
+    ]
+]
+
+fn main [] [
+    int capacity = 3
+    ptr Token tokens = sys.alloc capacity
+    tokens = sys.realloc tokens, 6
+
+    tokens[0].kind = 1
+    tokens[0].text = 'alpha'
+    tokens[0].line = 1
+    tokens[1].kind = 2
+    tokens[1].text = '42'
+    tokens[1].line = 2
+
+    int i = 0
+    while [i lt 2] [
+        i = i add 1
+    ]
+
+    str category = classify tokens[0].kind
+    io.print 'dynamic Token array created'
+    io.print 'items processed: [i]'
+    io.print 'first token category: [category]'
+    sys.free tokens
+]
