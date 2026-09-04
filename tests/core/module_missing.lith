@@ -1,0 +1,5 @@
+use './modules/does_not_exist.lith'
+
+fn main [] int [
+    = 0
+]
