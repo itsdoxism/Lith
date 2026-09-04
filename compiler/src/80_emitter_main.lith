@@ -29,10 +29,7 @@ fn emit_global_ir [int unused] int [
     str name = g_text
     next_tok 0
     expect_kind 'assign'
-    str value = '0'
-    if [str.eq g_kind, 'str'] [ value = string_const g_text ]
-    else [ value = g_text ]
-    next_tok 0
+    str value = parse_global_constant typ
     str s = str.concat '@', name
     s = str.concat s, ' = global '
     s = str.concat s, storage_type typ
@@ -61,7 +58,7 @@ fn emit_function_ir [int unused] int [
         str paddr = new_reg 0
         g_local_addrs = map_put g_local_addrs, pname, paddr
         if [first eq 0] [ args = str.concat args, ', ' ]
-        args = str.concat args, storage_type typ
+        args = str.concat args, abi_type typ
         args = str.concat args, ' %arg.'
         args = str.concat args, pname
         str p1 = str.concat '  ', paddr
@@ -83,16 +80,14 @@ fn emit_function_ir [int unused] int [
     if [g_fatal_error] [ = 0 ]
     expect_kind 'rb'
     str ret = 'int'
-    if [str.eq g_kind, 'id'] [
-        ret = g_text
-        next_tok 0
-    ]
+    if [str.eq g_kind, 'id'] [ ret = parse_type 0 ]
     g_current_ret = ret
     g_label = 0
     g_terminated = 0
+    g_current_label = ''
     g_break_label = ''
     g_continue_label = ''
-    str head = str.concat 'define ', storage_type ret
+    str head = str.concat 'define ', abi_type ret
     head = str.concat head, ' @'
     head = str.concat head, name
     head = str.concat head, '('
@@ -110,7 +105,7 @@ fn emit_function_ir [int unused] int [
 ]
 
 fn emit_header [int unused] int [
-    emit_line '; Luna self-hosted LLVM backend'
+    emit_line '; Lith self-hosted LLVM backend'
     emit_line ''
     emit_line 'declare ptr @luna_read_text(ptr)'
     emit_line 'declare i32 @luna_write_text(ptr, ptr)'
@@ -155,7 +150,7 @@ fn compile_llvm [str source] str [
             else [
                 if [str.eq g_kind, 'id' and str.eq g_text, 'fn'] [ emit_function_ir 0 ]
                 else [
-                    if [str.eq g_kind, 'id' and is_decl_type g_text] [ emit_global_ir 0 ]
+                    if [str.eq g_kind, 'id' and is_type_start g_text] [ emit_global_ir 0 ]
                     else [
                         fatal 'unsupported top level item'
                         = ''
