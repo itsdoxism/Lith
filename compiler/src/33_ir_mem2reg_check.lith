@@ -1,0 +1,12 @@
+# Final safety boundary for multi-block promotion. The CFG pruning pass validates
+# phi edges before mem2reg runs, so newly inserted phis must be checked again.
+fn ir_mem2reg_multi_block_checked [str code] str [
+    str out = ir_mem2reg_multi_block code
+    if [str.eq out, ''] [ = '' ]
+    int ok = ir_cfg_validate_pruned out
+    if [ok eq 0] [
+        sys.free out
+        = ''
+    ]
+    = out
+]
