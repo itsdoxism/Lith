@@ -10,4 +10,4 @@ OUT="$BUILD/native-surfaces"
 sh "$LITH" tests/core/native_surfaces.lith -o "$OUT"
 "$OUT"
 
-echo 'Lith fs + bytes + process + CLI native surfaces: passed'
+echo 'Lith fs + bytes + process native surfaces: passed'
