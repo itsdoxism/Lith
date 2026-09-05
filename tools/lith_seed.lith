@@ -1,5 +1,6 @@
 use fs
 use bytes
+use process
 
 fn same_file [str left_path, str right_path] int [
     bytes left = fs.read_bytes left_path
@@ -41,6 +42,12 @@ fn main [int argc, ptr str argv] int [
     bytes.free compiler
 
     str manifest = 'Lith trusted seed\nplatform=linux-x86_64\nverification=stage2==stage3==stage4 byte-for-byte\nsource=build/lithc\n'
+    str commit = process.env 'GITHUB_SHA'
+    if [commit] [
+        manifest = str.concat manifest, 'source_commit='
+        manifest = str.concat manifest, commit
+        manifest = str.concat manifest, str.chr 10
+    ]
     if [fs.write_text 'bootstrap/seed/manifest.txt', manifest eq 0] [
         print 'seed export failed: cannot write manifest'
         = 14
