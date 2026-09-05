@@ -108,12 +108,24 @@ backend-boundary-check:
 	sh tests/backend_boundary.sh
 
 ir-middle-end-check: compiler
-	sh tests/ir_middle_end.sh
+	BUILD=$(BUILD)/ir-middle-end LITHC=bin/lithc CLANG=$(CLANG) LLVM_RUNTIME=$(LLVM_RUNTIME) sh tests/ir_middle_end.sh
 
 reference-selfhost: compiler
-	sh tests/reference_selfhost.sh
+	BUILD=$(BUILD) sh tests/reference_selfhost.sh
 
-test: driver-check semantic-check core-check backend-boundary-check ir-middle-end-check reference-selfhost llvm-check llvm-selfhost
+test: compiler $(BUILD)/reference $(BUILD)/reference-llvm
+	$(BUILD)/reference
+	$(BUILD)/reference-llvm
+	$(PYTHON) -m py_compile $(BOOTSTRAP_C) $(BOOTSTRAP_LLVM)
+	$(MAKE) backend-boundary-check
+	$(MAKE) ir-middle-end-check
+	$(MAKE) driver-check
+	$(MAKE) semantic-check
+	$(MAKE) core-check
+	$(MAKE) reference-selfhost
+	$(MAKE) selfhost
+	$(MAKE) llvm-check
+	$(MAKE) llvm-selfhost
 
 clean:
-	rm -rf $(BUILD)
+	rm -rf $(BUILD) compiler/__pycache__ compiler/bootstrap/__pycache__
