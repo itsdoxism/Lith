@@ -263,8 +263,7 @@ fn ir_mem2reg_single_block [str code] str [
         = ''
     ]
 
-    # Chain the conservative forward-CFG SSA stage. Back-edge functions are
-    # returned unchanged by that stage, so loop behavior remains untouched.
+    # Build SSA across forward and loop CFGs, then run SCCP on the promoted IR.
     str multi = ir_mem2reg_multi_block out
     sys.free out
     if [str.eq multi, ''] [ = '' ]
@@ -272,5 +271,28 @@ fn ir_mem2reg_single_block [str code] str [
         sys.free multi
         = ''
     ]
-    = multi
+
+    str sccp = ir_sccp_optimize multi
+    sys.free multi
+    if [str.eq sccp, ''] [ = '' ]
+    if [ir_validate_function sccp eq 0] [
+        sys.free sccp
+        = ''
+    ]
+
+    # SCCP may turn conditional branches into unconditional ones. Re-run CFG
+    # pruning so dead successor blocks and stale phi inputs are removed before
+    # the existing final DCE pass consumes the result.
+    str pruned = ir_cfg_prune_unreachable sccp
+    sys.free sccp
+    if [str.eq pruned, ''] [ = '' ]
+    if [ir_validate_function pruned eq 0] [
+        sys.free pruned
+        = ''
+    ]
+    if [ir_validate_ssa_dominance pruned eq 0] [
+        sys.free pruned
+        = ''
+    ]
+    = pruned
 ]
