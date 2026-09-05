@@ -1,9 +1,8 @@
-# Conservative acyclic multi-block mem2reg emission.
+# Conservative multi-block mem2reg emission.
 #
-# This consumes the planning helpers from 31_ir_mem2reg_ssa.lith. Only forward
-# CFGs are transformed because the current linear SSA validator cannot yet
-# validate loop/back-edge phi inputs. Any uncertain incoming value causes a
-# whole-function fallback to the original IR.
+# Forward CFGs use the direct predecessor-value path below. Functions with
+# back-edges are delegated to 33_ir_mem2reg_loop.lith, which reserves phi
+# results before rewriting and fills loop phi payloads in a second pass.
 
 fn ir_m2r_ssa_label_for_block [str code, ptr int starts, int record_count, int wanted] str [
     if [wanted eq 0] [ = 'entry' ]
@@ -39,8 +38,6 @@ fn ir_m2r_ssa_value_put [str values, str slot, int block, str value] str [
     = out
 ]
 
-# Rewrite ordinary operands after promoted loads become aliases. This mirrors
-# the target-neutral rewrite surface used by optimizer v1/single-block mem2reg.
 fn ir_m2r_ssa_rewrite_record [str aliases, str op, str a, str b, str c, str d, str e] str [
     if [str.eq op, 'load'] [ c = ir_resolve_alias aliases, c ]
     if [str.eq op, 'store'] [
@@ -81,10 +78,6 @@ fn ir_m2r_ssa_rewrite_record [str aliases, str op, str a, str b, str c, str d, s
     = ir_encode_record op, a, b, c, d, e
 ]
 
-# Build entry values for all promotable slots when entering `block`. Predecessor
-# out-values are already available because this pass accepts only forward CFGs.
-# Differing incoming values produce a phi exactly where the dominance-frontier
-# plan says one is legal. Trivial identical incoming values reuse the value.
 fn ir_m2r_ssa_emit_block_phis [str code, ptr int starts, int record_count, str slots, str unsafe, str plan, ptr int edges, int block_count, int block, str values] str [
     str result = ''
     str next_values = values
@@ -154,9 +147,6 @@ fn ir_m2r_ssa_emit_block_phis [str code, ptr int starts, int record_count, str s
         i = i add 1
     ]
 
-    # Return emitted phi records followed by a separator record carrying the
-    # updated value map. The separator uses a newline-safe map payload because
-    # callers split at the first record delimiter marker below.
     str marker = str.chr 30
     str packed = str.concat result, marker
     packed = str.concat packed, next_values
@@ -194,15 +184,12 @@ fn ir_mem2reg_multi_block [str code] str [
     ptr int frontier = sys.alloc matrix_size
     ir_dom_build_edges code, starts, record_count, block_count, edges
 
-    # Conservative fallback for loops/back-edges until phi validation is
-    # dominance-aware rather than serialized-order based.
     if [ir_m2r_ssa_has_backedge edges, block_count] [
-        str unchanged = str.slice code, 0, str.len code
         sys.free starts
         sys.free edges
         sys.free dom
         sys.free frontier
-        = unchanged
+        = ir_mem2reg_loop code
     ]
 
     ir_dom_compute edges, block_count, dom
