@@ -25,6 +25,16 @@ fn promoted_branch [int input] int [
     = value
 ]
 
+fn promoted_loop [int limit] int [
+    int i = 0
+    int sum = 0
+    while [i lt limit] [
+        sum = sum add i
+        i = i add 1
+    ]
+    = sum
+]
+
 fn main [] int [
     int folded = 2 add 3
     if [1 eq 1] [
