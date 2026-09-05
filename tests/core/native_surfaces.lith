@@ -1,7 +1,11 @@
 use fs
 use bytes
+use process
 
 fn main [int argc, ptr str argv] int [
+    if [argc lt 1] [ = 9 ]
+    if [not argv[0]] [ = 8 ]
+
     str path = '/tmp/lith-native-surfaces.txt'
     int wrote = fs.write_text path, 'Lith bytes'
     if [wrote eq 0] [ = 10 ]
@@ -16,5 +20,10 @@ fn main [int argc, ptr str argv] int [
 
     str joined = bytes.concat head, ' native'
     if [bytes.eq joined, 'Lith native' eq 0] [ = 15 ]
+
+    str path_env = process.env 'PATH'
+    if [not path_env] [ = 16 ]
+    int status = process.run 'true'
+    if [status ne 0] [ = 17 ]
     = 0
 ]
