@@ -47,6 +47,9 @@ fn builtin_ret [str name] str [
     if [str.eq name, 'path.normalize'] [ = 'str' ]
     if [str.eq name, 'process.run'] [ = 'int' ]
     if [str.eq name, 'process.env'] [ = 'str' ]
+    if [str.eq name, 'process.exec'] [ = 'int' ]
+    if [str.eq name, 'process.spawn'] [ = 'int' ]
+    if [str.eq name, 'process.wait'] [ = 'int' ]
     if [str.eq name, 'str.len'] [ = 'int' ]
     if [str.eq name, 'str.at'] [ = 'int' ]
     if [str.eq name, 'str.slice'] [ = 'str' ]
@@ -92,6 +95,9 @@ fn builtin_argc [str name] int [
     if [str.eq name, 'path.normalize'] [ = 1 ]
     if [str.eq name, 'process.run'] [ = 1 ]
     if [str.eq name, 'process.env'] [ = 1 ]
+    if [str.eq name, 'process.exec'] [ = 2 ]
+    if [str.eq name, 'process.spawn'] [ = 2 ]
+    if [str.eq name, 'process.wait'] [ = 1 ]
     if [str.eq name, 'str.len'] [ = 1 ]
     if [str.eq name, 'str.at'] [ = 2 ]
     if [str.eq name, 'str.slice'] [ = 3 ]
@@ -148,6 +154,8 @@ fn builtin_param [str name, int index] str [
     if [str.eq name, 'path.normalize'] [ = 'str' ]
     if [str.eq name, 'process.run'] [ = 'str' ]
     if [str.eq name, 'process.env'] [ = 'str' ]
+    if [str.eq name, 'process.exec' or str.eq name, 'process.spawn'] [ = 'str' ]
+    if [str.eq name, 'process.wait'] [ = 'int' ]
     if [str.eq name, 'str.len'] [ = 'str' ]
     if [str.eq name, 'str.at'] [
         if [index eq 0] [ = 'str' ]
@@ -256,8 +264,6 @@ fn can_cast [str from, str to] int [
         if [is_integer_like from] [ = 1 ]
         = 0
     ]
-    # `null` has the internal type `ptr any` and is the only pointer value
-    # that implicitly adapts to a concrete pointer/string/bytes destination.
     if [str.eq to, 'str' and is_null_pointer_type from] [ = 1 ]
     if [str.eq to, 'bytes' and is_null_pointer_type from] [ = 1 ]
     if [str.starts to, 'ptr ' and is_null_pointer_type from] [ = 1 ]
@@ -282,8 +288,6 @@ fn cast_value [str op, str from, str to] str [
         = intify op, from
     ]
     if [str.eq to, 'float'] [ = floatify op, from ]
-    # Pointer reinterpretation is type-only in Lith IR. The backend decides
-    # whether a target representation requires a machine instruction.
     if [is_pointer_like from and is_pointer_like to] [ = op ]
     = op
 ]
@@ -309,15 +313,11 @@ fn explicit_cast [str op, str from, str to, int line, int start, int finish] str
 ]
 
 fn emit_numeric_compare [str op, str left, str left_type, str right, str right_type] str [
-    if [is_integer_like left_type and is_integer_like right_type] [
-        = ir_compare_int op, left, right
-    ]
+    if [is_integer_like left_type and is_integer_like right_type] [ = ir_compare_int op, left, right ]
     str a = left
     str b = right
     if [str.eq left_type, 'float' and is_integer_like right_type] [ b = floatify right, right_type ]
-    else [
-        if [is_integer_like left_type and str.eq right_type, 'float'] [ a = floatify left, left_type ]
-    ]
+    else [ if [is_integer_like left_type and str.eq right_type, 'float'] [ a = floatify left, left_type ] ]
     = ir_compare_float op, a, b
 ]
 
@@ -371,7 +371,6 @@ fn emit_binary [str op, str left, str left_type, str right, str right_type, int 
             g_expr_addr = ''
             = sr
         ]
-
         if [is_pointer_like left_type and is_pointer_like right_type] [
             if [not str.eq left_type, right_type and not is_null_pointer_type left_type and not is_null_pointer_type right_type] [
                 operator_type_error op, left_type, right_type, op_line, op_start, op_end
@@ -384,21 +383,18 @@ fn emit_binary [str op, str left, str left_type, str right, str right_type, int 
             g_expr_addr = ''
             = pr
         ]
-
         if [str.eq left_type, 'bool' and str.eq right_type, 'bool'] [
             str br = ir_compare_bool op, left, right
             g_expr_type = 'bool'
             g_expr_addr = ''
             = br
         ]
-
         if [is_integer_like left_type and is_integer_like right_type] [
             str irv = ir_compare_int op, left, right
             g_expr_type = 'bool'
             g_expr_addr = ''
             = irv
         ]
-
         if [numeric_pair left_type, right_type] [
             str fa = left
             str fb = right
@@ -409,7 +405,6 @@ fn emit_binary [str op, str left, str left_type, str right, str right_type, int 
             g_expr_addr = ''
             = fr
         ]
-
         operator_type_error op, left_type, right_type, op_line, op_start, op_end
         g_expr_type = 'bool'
         g_expr_addr = ''
