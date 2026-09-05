@@ -263,7 +263,8 @@ fn ir_mem2reg_single_block [str code] str [
         = ''
     ]
 
-    # Build SSA across forward and loop CFGs, then run SCCP on the promoted IR.
+    # Build SSA across forward and loop CFGs, then run SCCP refinements on the
+    # promoted IR before simplifying the resulting control flow.
     str multi = ir_mem2reg_multi_block out
     sys.free out
     if [str.eq multi, ''] [ = '' ]
@@ -280,11 +281,26 @@ fn ir_mem2reg_single_block [str code] str [
         = ''
     ]
 
-    # SCCP may turn conditional branches into unconditional ones. Re-run CFG
-    # pruning so dead successor blocks and stale phi inputs are removed before
-    # the existing final DCE pass consumes the result.
-    str pruned = ir_cfg_prune_unreachable sccp
+    str edge_sccp = ir_sccp_optimize_edges sccp
     sys.free sccp
+    if [str.eq edge_sccp, ''] [ = '' ]
+    if [ir_validate_function edge_sccp eq 0] [
+        sys.free edge_sccp
+        = ''
+    ]
+
+    str simplified = ir_cfg_simplify edge_sccp
+    sys.free edge_sccp
+    if [str.eq simplified, ''] [ = '' ]
+    if [ir_validate_function simplified eq 0] [
+        sys.free simplified
+        = ''
+    ]
+
+    # SCCP and CFG simplification can expose dead successors. Re-run CFG
+    # pruning so stale phi inputs disappear before the existing final DCE pass.
+    str pruned = ir_cfg_prune_unreachable simplified
+    sys.free simplified
     if [str.eq pruned, ''] [ = '' ]
     if [ir_validate_function pruned eq 0] [
         sys.free pruned
