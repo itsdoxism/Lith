@@ -1,6 +1,7 @@
 use fs
 use path
 use process
+use bytes
 
 fn fail_step [str step, int status] int [
     print str.concat 'build failed: ', step
@@ -85,12 +86,52 @@ fn compile_native [str clang, str llvm, str output] int [
 ]
 
 fn build_driver [str clang] int [
-    str ir = 'build/lith-driver.ll'
     int emit = run 'build/lithc', 'tools/lith_driver.lith\nbuild/lith-driver.ll', 'emit Lith driver'
     if [emit ne 0] [ = emit ]
 
     str args = '-Wno-override-module\n-O2\nbuild/lith-driver.ll\nruntime/luna_runtime.ll\nruntime/lith_bytes.ll\nruntime/lith_fs.ll\nruntime/lith_fs_posix.ll\nruntime/lith_path.ll\nruntime/lith_process_posix.ll\n-o\nbuild/lith-driver'
     = run clang, args, 'link Lith driver'
+]
+
+fn same_file [str left_path, str right_path] int [
+    bytes left = fs.read_bytes left_path
+    if [not left] [
+        print str.concat 'cannot read verification file: ', left_path
+        = 0
+    ]
+    bytes right = fs.read_bytes right_path
+    if [not right] [
+        bytes.free left
+        print str.concat 'cannot read verification file: ', right_path
+        = 0
+    ]
+
+    int same = bytes.eq left, right
+    bytes.free left
+    bytes.free right
+    = same
+]
+
+fn verify_self_host [] int [
+    int stage3 = run 'build/lithc', 'build/lithc.lith\nbuild/lithc-stage3.ll', 'stage3 self-host emission'
+    if [stage3 ne 0] [ = stage3 ]
+
+    if [same_file 'build/lithc-stage2.ll', 'build/lithc-stage3.ll' eq 0] [
+        print 'self-host verification failed: stage2 and stage3 LLVM IR differ'
+        = 90
+    ]
+
+    # Re-run once more from the same verified compiler. This catches accidental
+    # nondeterminism in emission even when the first self-host edge happens to match.
+    int stage4 = run 'build/lithc', 'build/lithc.lith\nbuild/lithc-stage4.ll', 'stage4 self-host emission'
+    if [stage4 ne 0] [ = stage4 ]
+    if [same_file 'build/lithc-stage3.ll', 'build/lithc-stage4.ll' eq 0] [
+        print 'self-host verification failed: stage3 and stage4 LLVM IR differ'
+        = 91
+    ]
+
+    print 'Lith self-host equality: stage2 == stage3 == stage4'
+    = 0
 ]
 
 fn main [int argc, ptr str argv] int [
@@ -121,6 +162,9 @@ fn main [int argc, ptr str argv] int [
 
     int compiler_link = compile_native clang, 'build/lithc-stage2.ll', 'build/lithc'
     if [compiler_link ne 0] [ = compiler_link ]
+
+    int verified = verify_self_host []
+    if [verified ne 0] [ = verified ]
 
     int driver = build_driver clang
     if [driver ne 0] [ = driver ]
