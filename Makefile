@@ -48,7 +48,7 @@ SELF_MODULES := \
 SELF_SRC := $(BUILD)/lithc.lith
 SELF_LITHC := $(BUILD)/lithc
 
-.PHONY: all compiler driver-check semantic-check core-check backend-boundary-check ir-middle-end-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
+.PHONY: all compiler driver-check native-surfaces-check semantic-check core-check backend-boundary-check ir-middle-end-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
 
 all: compiler
 
@@ -109,6 +109,10 @@ driver-check: compiler
 	$(BUILD)/driver-operators
 	@echo 'Native Lith driver + memory + struct + array + operator parity: passed'
 
+native-surfaces-check: compiler
+	bin/lith tools/native_surfaces_runner.lith -o $(BUILD)/native-surfaces-runner
+	$(BUILD)/native-surfaces-runner
+
 semantic-check: compiler
 	sh tests/semantic_errors.sh
 
@@ -131,6 +135,7 @@ test: compiler $(BUILD)/reference $(BUILD)/reference-llvm
 	$(MAKE) backend-boundary-check
 	$(MAKE) ir-middle-end-check
 	$(MAKE) driver-check
+	$(MAKE) native-surfaces-check
 	$(MAKE) semantic-check
 	$(MAKE) core-check
 	$(MAKE) reference-selfhost
