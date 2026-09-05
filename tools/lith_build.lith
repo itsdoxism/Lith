@@ -71,12 +71,6 @@ fn clang_program [] str [
     = 'clang'
 ]
 
-fn python_program [] str [
-    str value = process.env 'PYTHON'
-    if [value] [ = value ]
-    = 'python3'
-]
-
 fn trusted_seed [] str [
     str explicit = process.env 'LITH_SEED'
     if [explicit] [ = explicit ]
@@ -149,24 +143,15 @@ fn main [int argc, ptr str argv] int [
 
     str clang = clang_program []
     str seed = trusted_seed []
-
-    if [seed] [
-        print str.concat 'Lith bootstrap seed: ', seed
-        int stage2 = run seed, 'build/lithc.lith\nbuild/lithc-stage2.ll', 'seed compile'
-        if [stage2 ne 0] [ = stage2 ]
+    if [not seed] [
+        print 'Lith bootstrap failed: trusted seed is required'
+        print 'set LITH_SEED or install bootstrap/seed/lithc-linux-x86_64'
+        = 12
     ]
-    else [
-        print 'No trusted seed found; using Python bootstrap fallback'
-        str python = python_program []
-        int bootstrap = run python, 'compiler/lith_bootstrap_llvm.py\nbuild/lithc.lith\nbuild/lithc-stage1.ll', 'bootstrap LLVM emission'
-        if [bootstrap ne 0] [ = bootstrap ]
 
-        int stage1_link = compile_native clang, 'build/lithc-stage1.ll', 'build/lithc-stage1'
-        if [stage1_link ne 0] [ = stage1_link ]
-
-        int stage2_emit = run 'build/lithc-stage1', 'build/lithc.lith\nbuild/lithc-stage2.ll', 'stage2 LLVM emission'
-        if [stage2_emit ne 0] [ = stage2_emit ]
-    ]
+    print str.concat 'Lith bootstrap seed: ', seed
+    int stage2 = run seed, 'build/lithc.lith\nbuild/lithc-stage2.ll', 'seed compile'
+    if [stage2 ne 0] [ = stage2 ]
 
     int compiler_link = compile_native clang, 'build/lithc-stage2.ll', 'build/lithc'
     if [compiler_link ne 0] [ = compiler_link ]
