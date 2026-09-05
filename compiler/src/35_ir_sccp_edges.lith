@@ -1,0 +1,208 @@
+# Edge-aware SCCP refinement.
+#
+# Unlike the first SCCP stage, phi inputs are considered only when the exact
+# predecessor -> phi-block edge is executable. This avoids losing precision
+# when a reachable predecessor has multiple outgoing edges but SCCP proves only
+# one of them executable.
+
+fn ir_sccp_edge_mark [str edges, str from, str to] str [
+    = ir_cfg_note_edge edges, from, to
+]
+
+fn ir_sccp_edge_live [str edges, str from, str to] int [
+    = ir_cfg_has_edge edges, from, to
+]
+
+fn ir_sccp_edge_phi_state [str states, str executable_edges, str block_label, str payload, int count] str [
+    int have = 0
+    str merged = ''
+    int i = 0
+    while [i lt count] [
+        str pair = ir_list_item payload, i
+        str value = ir_pair_left pair
+        str pred = ir_pair_right pair
+        if [ir_sccp_edge_live executable_edges, pred, block_label] [
+            str incoming = ir_sccp_operand_state states, value
+            if [str.eq incoming, 'o'] [
+                sys.free pair
+                sys.free value
+                sys.free pred
+                = 'o'
+            ]
+            if [ir_sccp_state_is_const incoming] [
+                if [have eq 0] [
+                    merged = str.slice incoming, 0, str.len incoming
+                    have = 1
+                ]
+                else [
+                    if [not str.eq merged, incoming] [
+                        sys.free pair
+                        sys.free value
+                        sys.free pred
+                        = 'o'
+                    ]
+                ]
+            ]
+        ]
+        sys.free pair
+        sys.free value
+        sys.free pred
+        i = i add 1
+    ]
+    if [have] [ = merged ]
+    = ''
+]
+
+fn ir_sccp_edge_pack [str states, str executable, str edges] str [
+    str mark1 = str.chr 30
+    str mark2 = str.chr 31
+    str packed = str.concat states, mark1
+    packed = str.concat packed, executable
+    packed = str.concat packed, mark2
+    packed = str.concat packed, edges
+    sys.free mark1
+    sys.free mark2
+    = packed
+]
+
+fn ir_sccp_edge_part [str packed, int wanted] str [
+    int n = str.len packed
+    int i = 0
+    int part = 0
+    int start = 0
+    while [i le n] [
+        int boundary = 0
+        if [i eq n] [ boundary = 1 ]
+        else [
+            int ch = str.at packed, i
+            if [ch eq 30 or ch eq 31] [ boundary = 1 ]
+        ]
+        if [boundary] [
+            if [part eq wanted] [ = str.slice packed, start, i ]
+            part = part add 1
+            i = i add 1
+            start = i
+        ]
+        else [ i = i add 1 ]
+    ]
+    = ''
+]
+
+fn ir_sccp_edge_sweep [str code, ptr int starts, int record_count, str states, str executable, str executable_edges] str [
+    str next_states = states
+    str next_exec = executable
+    str next_edges = executable_edges
+    int block = 0
+    str block_label = 'entry'
+    int terminated = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+
+        if [str.eq op, 'label'] [
+            str previous_label = str.slice block_label, 0, str.len block_label
+            int previous_block = block
+            block = block add 1
+            if [terminated eq 0 and ir_sccp_block_executable next_exec, previous_block] [
+                next_edges = ir_sccp_edge_mark next_edges, previous_label, a
+                next_exec = ir_sccp_mark_block next_exec, block
+            ]
+            block_label = str.slice a, 0, str.len a
+            terminated = 0
+            sys.free previous_label
+        ]
+
+        if [ir_sccp_block_executable next_exec, block] [
+            if [str.eq op, 'branch'] [
+                int target = ir_dom_block_for_label code, starts, record_count, a
+                next_edges = ir_sccp_edge_mark next_edges, block_label, a
+                next_exec = ir_sccp_mark_block next_exec, target
+                terminated = 1
+            ]
+            if [str.eq op, 'cbranch'] [
+                str cond = ir_sccp_operand_state next_states, a
+                if [ir_sccp_state_is_const cond] [
+                    str cv = ir_sccp_state_const cond
+                    str target_label = c
+                    if [not str.eq cv, '0'] [ target_label = b ]
+                    int target2 = ir_dom_block_for_label code, starts, record_count, target_label
+                    next_edges = ir_sccp_edge_mark next_edges, block_label, target_label
+                    next_exec = ir_sccp_mark_block next_exec, target2
+                    sys.free cv
+                ]
+                else [
+                    if [str.eq cond, 'o'] [
+                        int yes = ir_dom_block_for_label code, starts, record_count, b
+                        int no = ir_dom_block_for_label code, starts, record_count, c
+                        next_edges = ir_sccp_edge_mark next_edges, block_label, b
+                        next_edges = ir_sccp_edge_mark next_edges, block_label, c
+                        next_exec = ir_sccp_mark_block next_exec, yes
+                        next_exec = ir_sccp_mark_block next_exec, no
+                    ]
+                ]
+                terminated = 1
+            ]
+            if [str.eq op, 'return' or str.eq op, 'unreachable'] [ terminated = 1 ]
+
+            if [ir_sccp_supported_result op] [
+                str incoming = ''
+                if [str.eq op, 'truthy_int' or str.eq op, 'not_bool' or str.eq op, 'bool_to_int'] [
+                    incoming = ir_sccp_eval_unary next_states, op, b
+                ]
+                if [str.eq op, 'logic' or str.eq op, 'arith_int' or str.eq op, 'compare_int' or str.eq op, 'compare_bool'] [
+                    incoming = ir_sccp_eval_binary next_states, b, op, c, d
+                ]
+                if [str.eq op, 'phi'] [
+                    int pc = ir_parse_count_text c
+                    incoming = ir_sccp_edge_phi_state next_states, next_edges, block_label, e, pc
+                ]
+                next_states = ir_sccp_merge_state next_states, a, incoming
+            ]
+            else [
+                if [ir_sccp_result_op op] [ next_states = ir_sccp_merge_state next_states, a, 'o' ]
+            ]
+        ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i add 1
+    ]
+    = ir_sccp_edge_pack next_states, next_exec, next_edges
+]
+
+fn ir_sccp_optimize_edges [str code] str [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+    int block_count = ir_dom_block_count code, starts, record_count
+
+    str states = ''
+    str executable = ''
+    str edges = ''
+    executable = ir_sccp_mark_block executable, 0
+
+    int passes = record_count add block_count
+    int pass = 0
+    while [pass lt passes] [
+        str packed = ir_sccp_edge_sweep code, starts, record_count, states, executable, edges
+        states = ir_sccp_edge_part packed, 0
+        executable = ir_sccp_edge_part packed, 1
+        edges = ir_sccp_edge_part packed, 2
+        sys.free packed
+        pass = pass add 1
+    ]
+
+    str out = ir_sccp_rewrite code, starts, record_count, states
+    sys.free starts
+    = out
+]
