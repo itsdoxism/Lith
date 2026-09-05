@@ -30,18 +30,16 @@ fn ir_m2r_loop_promotable [str code, ptr int starts, int record_count, str slots
     = ir_m2r_loop_is_entry_initialized code, starts, record_count, slot
 ]
 
-fn ir_m2r_loop_assign_phi_temps [str code, ptr int starts, int record_count, str slots, str unsafe, str plan] str [
+fn ir_m2r_loop_assign_phi_temps [str code, ptr int starts, int record_count, str slots, str unsafe, str plan, int block_count] str [
     str phis = ''
-    int block = 0
     int i = 0
     while [i lt record_count] [
         str op = ir_index_field code, starts, i, 0
         str slot = ir_index_field code, starts, i, 1
-        if [str.eq op, 'label'] [ block = block add 1 ]
         if [str.eq op, 'stack_alloc'] [
             if [ir_m2r_loop_promotable code, starts, record_count, slots, unsafe, slot] [
                 int b = 1
-                while [b lt ir_dom_block_count code, starts, record_count] [
+                while [b lt block_count] [
                     if [ir_m2r_ssa_has plan, slot, b] [
                         str phi = ir_new_value 0
                         phis = ir_m2r_ssa_value_put phis, slot, b, phi
@@ -175,7 +173,7 @@ fn ir_mem2reg_loop [str code] str [
     str unsafe = ir_m2r_ssa_collect_unsafe code, starts, record_count, slots
     str defs = ir_m2r_ssa_collect_def_blocks code, starts, record_count, slots, unsafe
     str plan = ir_m2r_ssa_place_phis code, starts, record_count, slots, unsafe, defs, frontier, block_count
-    str phis = ir_m2r_loop_assign_phi_temps code, starts, record_count, slots, unsafe, plan
+    str phis = ir_m2r_loop_assign_phi_temps code, starts, record_count, slots, unsafe, plan, block_count
 
     str aliases = ''
     str values = ''
