@@ -28,6 +28,27 @@ fn starts_expr [int unused] int [
 fn builtin_ret [str name] str [
     if [str.eq name, 'io.read_text'] [ = 'str' ]
     if [str.eq name, 'io.write_text'] [ = 'int' ]
+    if [str.eq name, 'fs.read_text'] [ = 'str' ]
+    if [str.eq name, 'fs.write_text'] [ = 'int' ]
+    if [str.eq name, 'fs.read_bytes'] [ = 'bytes' ]
+    if [str.eq name, 'fs.write_bytes'] [ = 'int' ]
+    if [str.eq name, 'fs.exists'] [ = 'int' ]
+    if [str.eq name, 'fs.remove'] [ = 'int' ]
+    if [str.eq name, 'fs.rename'] [ = 'int' ]
+    if [str.eq name, 'fs.mkdir'] [ = 'int' ]
+    if [str.eq name, 'fs.rmdir'] [ = 'int' ]
+    if [str.eq name, 'fs.chdir'] [ = 'int' ]
+    if [str.eq name, 'fs.cwd'] [ = 'str' ]
+    if [str.eq name, 'fs.list'] [ = 'str' ]
+    if [str.eq name, 'path.join'] [ = 'str' ]
+    if [str.eq name, 'path.dirname'] [ = 'str' ]
+    if [str.eq name, 'path.basename'] [ = 'str' ]
+    if [str.eq name, 'path.ext'] [ = 'str' ]
+    if [str.eq name, 'path.normalize'] [ = 'str' ]
+    if [str.eq name, 'process.env'] [ = 'str' ]
+    if [str.eq name, 'process.exec'] [ = 'int' ]
+    if [str.eq name, 'process.spawn'] [ = 'int' ]
+    if [str.eq name, 'process.wait'] [ = 'int' ]
     if [str.eq name, 'str.len'] [ = 'int' ]
     if [str.eq name, 'str.at'] [ = 'int' ]
     if [str.eq name, 'str.slice'] [ = 'str' ]
@@ -36,6 +57,17 @@ fn builtin_ret [str name] str [
     if [str.eq name, 'str.starts'] [ = 'int' ]
     if [str.eq name, 'str.trim'] [ = 'str' ]
     if [str.eq name, 'str.chr'] [ = 'str' ]
+    if [str.eq name, 'bytes.from_str'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.to_str'] [ = 'str' ]
+    if [str.eq name, 'bytes.alloc'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.len'] [ = 'int' ]
+    if [str.eq name, 'bytes.at'] [ = 'int' ]
+    if [str.eq name, 'bytes.set'] [ = 'int' ]
+    if [str.eq name, 'bytes.slice'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.concat'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.eq'] [ = 'int' ]
+    if [str.eq name, 'bytes.ptr'] [ = 'ptr char' ]
+    if [str.eq name, 'bytes.free'] [ = 'int' ]
     if [str.eq name, 'int.str'] [ = 'str' ]
     = map_get g_fn_ret, name
 ]
@@ -43,6 +75,27 @@ fn builtin_ret [str name] str [
 fn builtin_argc [str name] int [
     if [str.eq name, 'io.read_text'] [ = 1 ]
     if [str.eq name, 'io.write_text'] [ = 2 ]
+    if [str.eq name, 'fs.read_text'] [ = 1 ]
+    if [str.eq name, 'fs.write_text'] [ = 2 ]
+    if [str.eq name, 'fs.read_bytes'] [ = 1 ]
+    if [str.eq name, 'fs.write_bytes'] [ = 2 ]
+    if [str.eq name, 'fs.exists'] [ = 1 ]
+    if [str.eq name, 'fs.remove'] [ = 1 ]
+    if [str.eq name, 'fs.rename'] [ = 2 ]
+    if [str.eq name, 'fs.mkdir'] [ = 1 ]
+    if [str.eq name, 'fs.rmdir'] [ = 1 ]
+    if [str.eq name, 'fs.chdir'] [ = 1 ]
+    if [str.eq name, 'fs.cwd'] [ = 0 ]
+    if [str.eq name, 'fs.list'] [ = 1 ]
+    if [str.eq name, 'path.join'] [ = 2 ]
+    if [str.eq name, 'path.dirname'] [ = 1 ]
+    if [str.eq name, 'path.basename'] [ = 1 ]
+    if [str.eq name, 'path.ext'] [ = 1 ]
+    if [str.eq name, 'path.normalize'] [ = 1 ]
+    if [str.eq name, 'process.env'] [ = 1 ]
+    if [str.eq name, 'process.exec'] [ = 2 ]
+    if [str.eq name, 'process.spawn'] [ = 2 ]
+    if [str.eq name, 'process.wait'] [ = 1 ]
     if [str.eq name, 'str.len'] [ = 1 ]
     if [str.eq name, 'str.at'] [ = 2 ]
     if [str.eq name, 'str.slice'] [ = 3 ]
@@ -51,6 +104,17 @@ fn builtin_argc [str name] int [
     if [str.eq name, 'str.starts'] [ = 2 ]
     if [str.eq name, 'str.trim'] [ = 1 ]
     if [str.eq name, 'str.chr'] [ = 1 ]
+    if [str.eq name, 'bytes.from_str'] [ = 1 ]
+    if [str.eq name, 'bytes.to_str'] [ = 1 ]
+    if [str.eq name, 'bytes.alloc'] [ = 1 ]
+    if [str.eq name, 'bytes.len'] [ = 1 ]
+    if [str.eq name, 'bytes.at'] [ = 2 ]
+    if [str.eq name, 'bytes.set'] [ = 3 ]
+    if [str.eq name, 'bytes.slice'] [ = 3 ]
+    if [str.eq name, 'bytes.concat'] [ = 2 ]
+    if [str.eq name, 'bytes.eq'] [ = 2 ]
+    if [str.eq name, 'bytes.ptr'] [ = 1 ]
+    if [str.eq name, 'bytes.free'] [ = 1 ]
     if [str.eq name, 'int.str'] [ = 1 ]
     str n = map_get g_fn_argc, name
     if [str.eq n, ''] [ = 0 ]
@@ -58,6 +122,7 @@ fn builtin_argc [str name] int [
 ]
 
 fn call_argc_text [str name] str [
+    if [str.eq name, 'fs.cwd'] [ = '0' ]
     int builtin = builtin_argc name
     if [builtin gt 0] [ = int.str builtin ]
     = map_get g_fn_argc, name
@@ -66,6 +131,28 @@ fn call_argc_text [str name] str [
 fn builtin_param [str name, int index] str [
     if [str.eq name, 'io.read_text'] [ = 'str' ]
     if [str.eq name, 'io.write_text'] [ = 'str' ]
+    if [str.eq name, 'fs.read_text'] [ = 'str' ]
+    if [str.eq name, 'fs.write_text'] [ = 'str' ]
+    if [str.eq name, 'fs.read_bytes'] [ = 'str' ]
+    if [str.eq name, 'fs.write_bytes'] [
+        if [index eq 0] [ = 'str' ]
+        = 'bytes'
+    ]
+    if [str.eq name, 'fs.exists'] [ = 'str' ]
+    if [str.eq name, 'fs.remove'] [ = 'str' ]
+    if [str.eq name, 'fs.rename'] [ = 'str' ]
+    if [str.eq name, 'fs.mkdir'] [ = 'str' ]
+    if [str.eq name, 'fs.rmdir'] [ = 'str' ]
+    if [str.eq name, 'fs.chdir'] [ = 'str' ]
+    if [str.eq name, 'fs.list'] [ = 'str' ]
+    if [str.eq name, 'path.join'] [ = 'str' ]
+    if [str.eq name, 'path.dirname'] [ = 'str' ]
+    if [str.eq name, 'path.basename'] [ = 'str' ]
+    if [str.eq name, 'path.ext'] [ = 'str' ]
+    if [str.eq name, 'path.normalize'] [ = 'str' ]
+    if [str.eq name, 'process.env'] [ = 'str' ]
+    if [str.eq name, 'process.exec' or str.eq name, 'process.spawn'] [ = 'str' ]
+    if [str.eq name, 'process.wait'] [ = 'int' ]
     if [str.eq name, 'str.len'] [ = 'str' ]
     if [str.eq name, 'str.at'] [
         if [index eq 0] [ = 'str' ]
@@ -80,6 +167,26 @@ fn builtin_param [str name, int index] str [
     if [str.eq name, 'str.starts'] [ = 'str' ]
     if [str.eq name, 'str.trim'] [ = 'str' ]
     if [str.eq name, 'str.chr'] [ = 'int' ]
+    if [str.eq name, 'bytes.from_str'] [ = 'str' ]
+    if [str.eq name, 'bytes.to_str'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.alloc'] [ = 'int' ]
+    if [str.eq name, 'bytes.len'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.at'] [
+        if [index eq 0] [ = 'bytes' ]
+        = 'int'
+    ]
+    if [str.eq name, 'bytes.set'] [
+        if [index eq 0] [ = 'bytes' ]
+        = 'int'
+    ]
+    if [str.eq name, 'bytes.slice'] [
+        if [index eq 0] [ = 'bytes' ]
+        = 'int'
+    ]
+    if [str.eq name, 'bytes.concat'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.eq'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.ptr'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.free'] [ = 'bytes' ]
     if [str.eq name, 'int.str'] [ = 'int' ]
     str key = fn_param_key name, index
     = map_get g_fn_params, key
@@ -91,7 +198,7 @@ fn is_integer_like [str typ] int [
 ]
 
 fn is_pointer_like [str typ] int [
-    if [str.eq typ, 'str' or str.starts typ, 'ptr '] [ = 1 ]
+    if [str.eq typ, 'str' or str.eq typ, 'bytes' or str.starts typ, 'ptr '] [ = 1 ]
     = 0
 ]
 
@@ -154,9 +261,8 @@ fn can_cast [str from, str to] int [
         if [is_integer_like from] [ = 1 ]
         = 0
     ]
-    # `null` has the internal type `ptr any` and is the only pointer value
-    # that implicitly adapts to a concrete pointer/string destination.
     if [str.eq to, 'str' and is_null_pointer_type from] [ = 1 ]
+    if [str.eq to, 'bytes' and is_null_pointer_type from] [ = 1 ]
     if [str.starts to, 'ptr ' and is_null_pointer_type from] [ = 1 ]
     = 0
 ]
@@ -179,8 +285,6 @@ fn cast_value [str op, str from, str to] str [
         = intify op, from
     ]
     if [str.eq to, 'float'] [ = floatify op, from ]
-    # Pointer reinterpretation is type-only in Lith IR. The backend decides
-    # whether a target representation requires a machine instruction.
     if [is_pointer_like from and is_pointer_like to] [ = op ]
     = op
 ]
@@ -206,15 +310,11 @@ fn explicit_cast [str op, str from, str to, int line, int start, int finish] str
 ]
 
 fn emit_numeric_compare [str op, str left, str left_type, str right, str right_type] str [
-    if [is_integer_like left_type and is_integer_like right_type] [
-        = ir_compare_int op, left, right
-    ]
+    if [is_integer_like left_type and is_integer_like right_type] [ = ir_compare_int op, left, right ]
     str a = left
     str b = right
     if [str.eq left_type, 'float' and is_integer_like right_type] [ b = floatify right, right_type ]
-    else [
-        if [is_integer_like left_type and str.eq right_type, 'float'] [ a = floatify left, left_type ]
-    ]
+    else [ if [is_integer_like left_type and str.eq right_type, 'float'] [ a = floatify left, left_type ] ]
     = ir_compare_float op, a, b
 ]
 
@@ -268,7 +368,6 @@ fn emit_binary [str op, str left, str left_type, str right, str right_type, int 
             g_expr_addr = ''
             = sr
         ]
-
         if [is_pointer_like left_type and is_pointer_like right_type] [
             if [not str.eq left_type, right_type and not is_null_pointer_type left_type and not is_null_pointer_type right_type] [
                 operator_type_error op, left_type, right_type, op_line, op_start, op_end
@@ -281,21 +380,18 @@ fn emit_binary [str op, str left, str left_type, str right, str right_type, int 
             g_expr_addr = ''
             = pr
         ]
-
         if [str.eq left_type, 'bool' and str.eq right_type, 'bool'] [
             str br = ir_compare_bool op, left, right
             g_expr_type = 'bool'
             g_expr_addr = ''
             = br
         ]
-
         if [is_integer_like left_type and is_integer_like right_type] [
             str irv = ir_compare_int op, left, right
             g_expr_type = 'bool'
             g_expr_addr = ''
             = irv
         ]
-
         if [numeric_pair left_type, right_type] [
             str fa = left
             str fb = right
@@ -306,7 +402,6 @@ fn emit_binary [str op, str left, str left_type, str right, str right_type, int 
             g_expr_addr = ''
             = fr
         ]
-
         operator_type_error op, left_type, right_type, op_line, op_start, op_end
         g_expr_type = 'bool'
         g_expr_addr = ''

@@ -8,6 +8,66 @@ fn local_load [] int [
     = value
 ]
 
+fn promoted_local [int input] int [
+    int value = input
+    int other = input add 1
+    = value add other
+]
+
+fn promoted_branch [int input] int [
+    int value = 10
+    if [input eq 0] [
+        value = 20
+    ]
+    else [
+        value = 30
+    ]
+    = value
+]
+
+fn promoted_loop [int limit] int [
+    int i = 0
+    int sum = 0
+    while [i lt limit] [
+        sum = sum add i
+        i = i add 1
+    ]
+    = sum
+]
+
+fn sccp_join_constant [int input] int [
+    int value = 0
+    if [input eq 0] [
+        value = 7
+    ]
+    else [
+        value = 7
+    ]
+    if [value eq 7] [
+        = 11
+    ]
+    else [
+        = 99
+    ]
+]
+
+fn gvn_duplicate [int input] int [
+    int left = input add 1
+    int right = input add 1
+    = left add right
+]
+
+fn licm_loop [int limit, int base] int [
+    int i = 0
+    int sum = 0
+    while [i lt limit] [
+        int invariant = base add 3
+        sum = sum add invariant
+        i = i add 1
+    ]
+    = sum
+]
+
 fn main [] int [
     int folded = 2 add 3
     if [1 eq 1] [

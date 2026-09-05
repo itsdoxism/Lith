@@ -1,0 +1,163 @@
+# Immediate-dominator tree and dominance-frontier analysis for Lith IR.
+#
+# These helpers consume the verified dominator matrix from 29_ir_dom.lith.
+# They are analysis-only: no IR is rewritten here. The deliberately simple
+# O(B^3) algorithms keep the invariants obvious while the middle-end is still
+# being bootstrapped toward full SSA construction.
+
+fn ir_dom_compute_idom [ptr int dom, int block_count, ptr int idom] int [
+    if [block_count le 0] [ = 0 ]
+    idom[0] = 0 sub 1
+
+    int block = 1
+    while [block lt block_count] [
+        int found = 0 sub 1
+        int candidate = 0
+        while [candidate lt block_count] [
+            int candidate_ok = 0
+            if [candidate ne block] [
+                if [ir_dom_dominates dom, block_count, candidate, block] [
+                    candidate_ok = 1
+                    int other = 0
+                    while [other lt block_count] [
+                        if [other ne block and other ne candidate] [
+                            if [ir_dom_dominates dom, block_count, other, block] [
+                                if [ir_dom_dominates dom, block_count, candidate, other] [
+                                    candidate_ok = 0
+                                ]
+                            ]
+                        ]
+                        other = other add 1
+                    ]
+                ]
+            ]
+            if [candidate_ok] [ found = candidate ]
+            candidate = candidate add 1
+        ]
+        idom[block] = found
+        block = block add 1
+    ]
+    = 0
+]
+
+fn ir_dom_build_tree [ptr int idom, int block_count, ptr int tree] int [
+    int total = block_count mul block_count
+    int i = 0
+    while [i lt total] [
+        tree[i] = 0
+        i = i add 1
+    ]
+
+    int child = 1
+    while [child lt block_count] [
+        int parent = idom[child]
+        if [parent ge 0 and parent lt block_count] [
+            int slot = ir_dom_slot parent, child, block_count
+            tree[slot] = 1
+        ]
+        child = child add 1
+    ]
+    = 0
+]
+
+fn ir_dom_tree_is_child [ptr int tree, int block_count, int parent, int child] int [
+    if [parent lt 0 or child lt 0 or parent ge block_count or child ge block_count] [ = 0 ]
+    int slot = ir_dom_slot parent, child, block_count
+    = tree[slot]
+]
+
+# DF[X,Y] means Y is in the dominance frontier of X. The direct definition is
+# used instead of a recursive tree walk: X dominates at least one predecessor
+# of Y, but X does not strictly dominate Y. X == Y is therefore allowed for
+# loop headers reached by a back-edge.
+fn ir_dom_compute_frontier [ptr int edges, ptr int dom, int block_count, ptr int frontier] int [
+    int total = block_count mul block_count
+    int z = 0
+    while [z lt total] [
+        frontier[z] = 0
+        z = z add 1
+    ]
+
+    int x = 0
+    while [x lt block_count] [
+        int y = 0
+        while [y lt block_count] [
+            int has_dominated_pred = 0
+            int pred = 0
+            while [pred lt block_count] [
+                int edge_slot = ir_dom_slot pred, y, block_count
+                if [edges[edge_slot]] [
+                    if [ir_dom_dominates dom, block_count, x, pred] [
+                        has_dominated_pred = 1
+                    ]
+                ]
+                pred = pred add 1
+            ]
+
+            if [has_dominated_pred] [
+                int strictly_dominates_y = 0
+                if [x ne y] [
+                    if [ir_dom_dominates dom, block_count, x, y] [
+                        strictly_dominates_y = 1
+                    ]
+                ]
+                if [strictly_dominates_y eq 0] [
+                    int out_slot = ir_dom_slot x, y, block_count
+                    frontier[out_slot] = 1
+                ]
+            ]
+            y = y add 1
+        ]
+        x = x add 1
+    ]
+    = 0
+]
+
+fn ir_dom_frontier_contains [ptr int frontier, int block_count, int block, int member] int [
+    if [block lt 0 or member lt 0 or block ge block_count or member ge block_count] [ = 0 ]
+    int slot = ir_dom_slot block, member, block_count
+    = frontier[slot]
+]
+
+fn ir_dom_tree_frontier_verify [str code] int [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+
+    int block_count = ir_dom_block_count code, starts, record_count
+    int matrix_size = block_count mul block_count
+    ptr int edges = sys.alloc matrix_size
+    ptr int dom = sys.alloc matrix_size
+    ptr int idom = sys.alloc block_count
+    ptr int tree = sys.alloc matrix_size
+    ptr int frontier = sys.alloc matrix_size
+
+    ir_dom_build_edges code, starts, record_count, block_count, edges
+    ir_dom_compute edges, block_count, dom
+    ir_dom_compute_idom dom, block_count, idom
+    ir_dom_build_tree idom, block_count, tree
+    ir_dom_compute_frontier edges, dom, block_count, frontier
+
+    int ok = 1
+    int block = 1
+    while [block lt block_count] [
+        int parent = idom[block]
+        if [parent lt 0 or parent ge block_count] [ ok = 0 ]
+        else [
+            if [not ir_dom_dominates dom, block_count, parent, block] [ ok = 0 ]
+            if [not ir_dom_tree_is_child tree, block_count, parent, block] [ ok = 0 ]
+        ]
+        block = block add 1
+    ]
+
+    if [ok eq 0] [ ir_validation_error 'middle-end dominator tree invariant failed' ]
+
+    sys.free starts
+    sys.free edges
+    sys.free dom
+    sys.free idom
+    sys.free tree
+    sys.free frontier
+    = ok
+]

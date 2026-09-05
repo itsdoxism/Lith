@@ -1,0 +1,33 @@
+use fs
+use path
+use process
+
+fn run_checked [str program, str args, int code] int [
+    int status = process.exec program, args
+    if [status ne 0] [
+        print str.concat 'program failed: ', program
+        = code
+    ]
+    = 0
+]
+
+fn main [int argc, ptr str argv] int [
+    str build_root = 'build'
+    str build_dir = path.join build_root, 'native-surfaces'
+
+    fs.mkdir build_root
+    fs.mkdir build_dir
+
+    str output = path.join build_dir, 'native-surfaces'
+    str compile_args = 'tests/core/native_surfaces.lith\n-o\n'
+    compile_args = str.concat compile_args, output
+
+    int compile_status = run_checked 'bin/lith', compile_args, 10
+    if [compile_status ne 0] [ = compile_status ]
+
+    int run_status = run_checked output, '', 20
+    if [run_status ne 0] [ = run_status ]
+
+    print 'Lith text/binary fs + directories + path + bytes + direct process native surfaces: passed'
+    = 0
+]

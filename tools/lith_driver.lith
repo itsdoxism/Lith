@@ -1,0 +1,103 @@
+use fs
+use path
+use process
+
+fn usage [] int [
+    print 'usage: lith input.lith [-o output] [--emit-llvm path] [-O0|-O1|-O2|-O3|--release] [--native]'
+    = 2
+]
+
+fn append_arg [str args, str value] str [
+    if [str.eq args, ''] [ = value ]
+    str out = str.concat args, str.chr 10
+    = str.concat out, value
+]
+
+fn default_output [str input] str [
+    str base = path.basename input
+    str ext = path.ext base
+    if [str.eq ext, '.lith'] [
+        = str.slice base, 0, [str.len base sub 5]
+    ]
+    = base
+]
+
+fn main [int argc, ptr str argv] int [
+    if [argc lt 2] [ = usage [] ]
+
+    str input = argv[1]
+    str output = ''
+    str emit = ''
+    str opt = '-O2'
+    int native = 0
+
+    int i = 2
+    while [i lt argc] [
+        str arg = argv[i]
+        if [str.eq arg, '-o'] [
+            if [i add 1 ge argc] [ = usage [] ]
+            output = argv[i add 1]
+            i = i add 2
+            continue
+        ]
+        if [str.eq arg, '--emit-llvm'] [
+            if [i add 1 ge argc] [ = usage [] ]
+            emit = argv[i add 1]
+            i = i add 2
+            continue
+        ]
+        if [str.eq arg, '-O0' or str.eq arg, '-O1' or str.eq arg, '-O2' or str.eq arg, '-O3'] [
+            opt = arg
+            i = i add 1
+            continue
+        ]
+        if [str.eq arg, '--release'] [
+            opt = '-O3'
+            i = i add 1
+            continue
+        ]
+        if [str.eq arg, '--native'] [
+            native = 1
+            i = i add 1
+            continue
+        ]
+        = usage []
+    ]
+
+    if [str.eq output, ''] [ output = default_output input ]
+
+    if [not str.eq emit, ''] [
+        str emit_args = append_arg input, emit
+        int emit_status = process.exec 'bin/lithc', emit_args
+        if [emit_status ne 0] [ = emit_status ]
+        = 0
+    ]
+
+    str temp = str.concat output, '.lith-tmp.ll'
+    str compile_args = append_arg input, temp
+    int compile_status = process.exec 'bin/lithc', compile_args
+    if [compile_status ne 0] [
+        fs.remove temp
+        = compile_status
+    ]
+
+    str clang = process.env 'CLANG'
+    if [not clang] [ clang = 'clang' ]
+
+    str clang_args = '-Wno-override-module'
+    clang_args = append_arg clang_args, opt
+    if [native] [ clang_args = append_arg clang_args, '-march=native' ]
+    clang_args = append_arg clang_args, temp
+    clang_args = append_arg clang_args, 'runtime/luna_runtime.ll'
+    clang_args = append_arg clang_args, 'runtime/lith_bytes.ll'
+    clang_args = append_arg clang_args, 'runtime/lith_fs.ll'
+    clang_args = append_arg clang_args, 'runtime/lith_fs_posix.ll'
+    clang_args = append_arg clang_args, 'runtime/lith_path.ll'
+    clang_args = append_arg clang_args, 'runtime/lith_process_posix.ll'
+    clang_args = append_arg clang_args, '-o'
+    clang_args = append_arg clang_args, output
+
+    int link_status = process.exec clang, clang_args
+    fs.remove temp
+    = link_status
+]

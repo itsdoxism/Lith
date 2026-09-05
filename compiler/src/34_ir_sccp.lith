@@ -1,0 +1,442 @@
+# Sparse conditional constant propagation for Lith SSA IR.
+#
+# Lattice states are encoded in one compact map:
+#   missing  -> unknown
+#   c:<text> -> constant
+#   o        -> overdefined
+# Executable blocks are tracked separately. This first SCCP stage handles the
+# integer/bool operations already understood by optimizer v1 plus phi/cbranch.
+# Unsupported result-producing instructions conservatively become overdefined.
+
+fn ir_sccp_const_state [str value] str [
+    = str.concat 'c:', value
+]
+
+fn ir_sccp_state_is_const [str state] int [ = str.starts state, 'c:' ]
+
+fn ir_sccp_state_const [str state] str [
+    if [not ir_sccp_state_is_const state] [ = '' ]
+    = str.slice state, 2, str.len state
+]
+
+fn ir_sccp_operand_state [str states, str value] str [
+    if [ir_is_int_constant value] [ = ir_sccp_const_state value ]
+    if [not ir_value_is_temp value] [ = 'o' ]
+    str known = map_get states, value
+    if [str.eq known, ''] [ = '' ]
+    = known
+]
+
+# Monotone lattice update. Constants may only move to overdefined when two
+# different executable facts meet; overdefined never becomes more precise.
+fn ir_sccp_merge_state [str states, str value, str incoming] str [
+    if [not ir_value_is_temp value] [ = states ]
+    if [str.eq incoming, ''] [ = states ]
+    str old = map_get states, value
+    if [str.eq old, 'o'] [ = states ]
+    if [str.eq old, ''] [ = map_put states, value, incoming ]
+    if [str.eq incoming, 'o'] [ = map_put states, value, 'o' ]
+    if [str.eq old, incoming] [ = states ]
+    = map_put states, value, 'o'
+]
+
+fn ir_sccp_block_key [int block] str [ = int.str block ]
+
+fn ir_sccp_block_executable [str executable, int block] int [
+    str key = ir_sccp_block_key block
+    str known = map_get executable, key
+    sys.free key
+    = str.eq known, '1'
+]
+
+fn ir_sccp_mark_block [str executable, int block] str [
+    if [block lt 0] [ = executable ]
+    str key = ir_sccp_block_key block
+    str out = map_put executable, key, '1'
+    sys.free key
+    = out
+]
+
+fn ir_sccp_eval_unary [str states, str op, str input] str [
+    str input_state = ir_sccp_operand_state states, input
+    if [str.eq input_state, 'o'] [ = 'o' ]
+    if [not ir_sccp_state_is_const input_state] [ = '' ]
+    str value = ir_sccp_state_const input_state
+    str result = ''
+    if [str.eq op, 'truthy_int'] [
+        int n = ir_parse_int_constant value
+        if [n eq 0] [ result = 'c:0' ]
+        else [ result = 'c:1' ]
+    ]
+    if [str.eq op, 'not_bool'] [
+        if [str.eq value, '0'] [ result = 'c:1' ]
+        else [
+            if [str.eq value, '1'] [ result = 'c:0' ]
+            else [ result = 'o' ]
+        ]
+    ]
+    if [str.eq op, 'bool_to_int'] [
+        if [str.eq value, '0' or str.eq value, '1'] [ result = ir_sccp_const_state value ]
+        else [ result = 'o' ]
+    ]
+    sys.free value
+    if [str.eq result, ''] [ = 'o' ]
+    = result
+]
+
+fn ir_sccp_eval_binary [str states, str op, str kind, str left_value, str right_value] str [
+    str left_state = ir_sccp_operand_state states, left_value
+    str right_state = ir_sccp_operand_state states, right_value
+    if [str.eq left_state, 'o' or str.eq right_state, 'o'] [ = 'o' ]
+    if [not ir_sccp_state_is_const left_state or not ir_sccp_state_is_const right_state] [ = '' ]
+
+    str left_text = ir_sccp_state_const left_state
+    str right_text = ir_sccp_state_const right_state
+    int left = ir_parse_int_constant left_text
+    int right = ir_parse_int_constant right_text
+    int ok = 1
+    int result = 0
+
+    if [str.eq kind, 'arith_int'] [
+        if [str.eq op, 'add'] [ result = left add right ]
+        else [
+            if [str.eq op, 'sub'] [ result = left sub right ]
+            else [
+                if [str.eq op, 'mul'] [ result = left mul right ]
+                else [
+                    if [str.eq op, 'div'] [
+                        if [right eq 0] [ ok = 0 ]
+                        else [ result = left div right ]
+                    ]
+                    else [
+                        if [str.eq op, 'mod'] [
+                            if [right eq 0] [ ok = 0 ]
+                            else [ result = left mod right ]
+                        ]
+                        else [ ok = 0 ]
+                    ]
+                ]
+            ]
+        ]
+    ]
+    else [
+        if [str.eq kind, 'logic'] [
+            if [str.eq op, 'and'] [ result = left and right ]
+            else [
+                if [str.eq op, 'or'] [ result = left or right ]
+                else [ ok = 0 ]
+            ]
+        ]
+        else [
+            if [str.eq kind, 'compare_int' or str.eq kind, 'compare_bool'] [ result = ir_fold_compare_int op, left, right ]
+            else [ ok = 0 ]
+        ]
+    ]
+
+    sys.free left_text
+    sys.free right_text
+    if [ok eq 0] [ = 'o' ]
+    str result_text = int.str result
+    str state = ir_sccp_const_state result_text
+    sys.free result_text
+    = state
+]
+
+fn ir_sccp_phi_state [str code, ptr int starts, int record_count, str states, str executable, str payload, int count] str [
+    int have = 0
+    str merged = ''
+    int i = 0
+    while [i lt count] [
+        str pair = ir_list_item payload, i
+        str value = ir_pair_left pair
+        str pred = ir_pair_right pair
+        int pred_block = ir_dom_block_for_label code, starts, record_count, pred
+        if [pred_block ge 0 and ir_sccp_block_executable executable, pred_block] [
+            str incoming = ir_sccp_operand_state states, value
+            if [str.eq incoming, 'o'] [
+                sys.free pair
+                sys.free value
+                sys.free pred
+                = 'o'
+            ]
+            if [ir_sccp_state_is_const incoming] [
+                if [have eq 0] [
+                    merged = str.slice incoming, 0, str.len incoming
+                    have = 1
+                ]
+                else [
+                    if [not str.eq merged, incoming] [
+                        sys.free pair
+                        sys.free value
+                        sys.free pred
+                        = 'o'
+                    ]
+                ]
+            ]
+        ]
+        sys.free pair
+        sys.free value
+        sys.free pred
+        i = i add 1
+    ]
+    if [have] [ = merged ]
+    = ''
+]
+
+fn ir_sccp_result_op [str op] int [
+    if [ir_is_pure_result_op op] [ = 1 ]
+    if [str.eq op, 'call' or str.eq op, 'alloc' or str.eq op, 'realloc'] [ = 1 ]
+    = 0
+]
+
+fn ir_sccp_supported_result [str op] int [
+    if [str.eq op, 'truthy_int' or str.eq op, 'not_bool' or str.eq op, 'bool_to_int'] [ = 1 ]
+    if [str.eq op, 'logic' or str.eq op, 'arith_int'] [ = 1 ]
+    if [str.eq op, 'compare_int' or str.eq op, 'compare_bool' or str.eq op, 'phi'] [ = 1 ]
+    = 0
+]
+
+# One monotone sweep over currently executable blocks. Unknown conditional
+# values do not make either successor executable yet; overdefined conditions do.
+fn ir_sccp_sweep [str code, ptr int starts, int record_count, str states, str executable] str [
+    str next_states = states
+    str next_exec = executable
+    int block = 0
+    int terminated = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+
+        if [str.eq op, 'label'] [
+            int previous = block
+            block = block add 1
+            if [terminated eq 0 and ir_sccp_block_executable next_exec, previous] [
+                next_exec = ir_sccp_mark_block next_exec, block
+            ]
+            terminated = 0
+        ]
+        if [ir_sccp_block_executable next_exec, block] [
+            if [str.eq op, 'branch'] [
+                int target = ir_dom_block_for_label code, starts, record_count, a
+                next_exec = ir_sccp_mark_block next_exec, target
+                terminated = 1
+            ]
+            if [str.eq op, 'cbranch'] [
+                str cond = ir_sccp_operand_state next_states, a
+                if [ir_sccp_state_is_const cond] [
+                    str cv = ir_sccp_state_const cond
+                    int target2 = ir_dom_block_for_label code, starts, record_count, c
+                    if [not str.eq cv, '0'] [ target2 = ir_dom_block_for_label code, starts, record_count, b ]
+                    next_exec = ir_sccp_mark_block next_exec, target2
+                    sys.free cv
+                ]
+                else [
+                    if [str.eq cond, 'o'] [
+                        int yes = ir_dom_block_for_label code, starts, record_count, b
+                        int no = ir_dom_block_for_label code, starts, record_count, c
+                        next_exec = ir_sccp_mark_block next_exec, yes
+                        next_exec = ir_sccp_mark_block next_exec, no
+                    ]
+                ]
+                terminated = 1
+            ]
+            if [str.eq op, 'return' or str.eq op, 'unreachable'] [ terminated = 1 ]
+
+            if [ir_sccp_supported_result op] [
+                str incoming = ''
+                if [str.eq op, 'truthy_int' or str.eq op, 'not_bool' or str.eq op, 'bool_to_int'] [ incoming = ir_sccp_eval_unary next_states, op, b ]
+                if [str.eq op, 'logic' or str.eq op, 'arith_int' or str.eq op, 'compare_int' or str.eq op, 'compare_bool'] [ incoming = ir_sccp_eval_binary next_states, b, op, c, d ]
+                if [str.eq op, 'phi'] [
+                    int pc = ir_parse_count_text c
+                    incoming = ir_sccp_phi_state code, starts, record_count, next_states, next_exec, e, pc
+                ]
+                next_states = ir_sccp_merge_state next_states, a, incoming
+            ]
+            else [
+                if [ir_sccp_result_op op] [ next_states = ir_sccp_merge_state next_states, a, 'o' ]
+            ]
+        ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i add 1
+    ]
+
+    str marker = str.chr 30
+    str packed = str.concat next_states, marker
+    packed = str.concat packed, next_exec
+    sys.free marker
+    = packed
+]
+
+fn ir_sccp_unpack_left [str packed] str [
+    int n = str.len packed
+    int i = 0
+    while [i lt n and str.at packed, i ne 30] [ i = i add 1 ]
+    = str.slice packed, 0, i
+]
+
+fn ir_sccp_unpack_right [str packed] str [
+    int n = str.len packed
+    int i = 0
+    while [i lt n and str.at packed, i ne 30] [ i = i add 1 ]
+    if [i ge n] [ = '' ]
+    int start = i add 1
+    = str.slice packed, start, n
+]
+
+fn ir_sccp_resolve [str states, str value] str [
+    if [not ir_value_is_temp value] [ = value ]
+    str state = map_get states, value
+    if [not ir_sccp_state_is_const state] [ = value ]
+    = ir_sccp_state_const state
+]
+
+fn ir_sccp_rewrite_args [str states, str payload, int count] str [
+    str out = ''
+    int i = 0
+    while [i lt count] [
+        str typ = ir_arg_type payload, i
+        str value = ir_arg_value payload, i
+        str resolved = ir_sccp_resolve states, value
+        out = ir_args_add out, i, typ, resolved
+        sys.free typ
+        sys.free value
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_sccp_rewrite_phi [str states, str payload, int count] str [
+    str out = ''
+    int i = 0
+    while [i lt count] [
+        str pair = ir_list_item payload, i
+        str value = ir_pair_left pair
+        str pred = ir_pair_right pair
+        str resolved = ir_sccp_resolve states, value
+        str next = ir_arg_pair resolved, pred
+        out = ir_append_owned out, next
+        sys.free pair
+        sys.free value
+        sys.free pred
+        sys.free next
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_sccp_rewrite [str code, ptr int starts, int record_count, str states] str [
+    str out = str.slice '', 0, 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+        int emit = 1
+
+        if [ir_sccp_supported_result op] [
+            str state = map_get states, a
+            if [ir_sccp_state_is_const state] [ emit = 0 ]
+        ]
+
+        if [str.eq op, 'load'] [ c = ir_sccp_resolve states, c ]
+        if [str.eq op, 'store'] [
+            b = ir_sccp_resolve states, b
+            c = ir_sccp_resolve states, c
+        ]
+        if [str.eq op, 'array_addr' or str.eq op, 'pointer_addr'] [
+            c = ir_sccp_resolve states, c
+            d = ir_sccp_resolve states, d
+        ]
+        if [str.eq op, 'field_addr'] [ c = ir_sccp_resolve states, c ]
+        if [str.eq op, 'truthy_pointer' or str.eq op, 'truthy_float' or str.eq op, 'truthy_int' or str.eq op, 'not_bool'] [ b = ir_sccp_resolve states, b ]
+        if [str.eq op, 'bool_to_int' or str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [ b = ir_sccp_resolve states, b ]
+        if [str.eq op, 'logic' or str.eq op, 'compare_int' or str.eq op, 'compare_bool' or str.eq op, 'compare_pointer' or str.eq op, 'compare_float' or str.eq op, 'arith_int' or str.eq op, 'arith_float'] [
+            c = ir_sccp_resolve states, c
+            d = ir_sccp_resolve states, d
+        ]
+        if [str.eq op, 'cbranch'] [
+            a = ir_sccp_resolve states, a
+            if [ir_is_int_constant a] [
+                str target = c
+                int cv2 = ir_parse_int_constant a
+                if [cv2 ne 0] [ target = b ]
+                op = 'branch'
+                a = target
+                b = ''
+                c = ''
+            ]
+        ]
+        if [str.eq op, 'return'] [ b = ir_sccp_resolve states, b ]
+        if [str.eq op, 'alloc'] [ c = ir_sccp_resolve states, c ]
+        if [str.eq op, 'realloc'] [
+            c = ir_sccp_resolve states, c
+            d = ir_sccp_resolve states, d
+        ]
+        if [str.eq op, 'free' or str.eq op, 'print_line'] [ a = ir_sccp_resolve states, a ]
+        if [str.eq op, 'call'] [
+            int argc = ir_parse_count_text d
+            e = ir_sccp_rewrite_args states, e, argc
+        ]
+        if [str.eq op, 'phi' and emit] [
+            int pc2 = ir_parse_count_text c
+            e = ir_sccp_rewrite_phi states, e, pc2
+        ]
+
+        if [emit] [
+            str encoded = ir_encode_record op, a, b, c, d, e
+            out = ir_append_owned out, encoded
+            sys.free encoded
+        ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_sccp_optimize [str code] str [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+    int block_count = ir_dom_block_count code, starts, record_count
+
+    str states = ''
+    str executable = ''
+    executable = ir_sccp_mark_block executable, 0
+
+    int passes = record_count add block_count
+    int pass = 0
+    while [pass lt passes] [
+        str packed = ir_sccp_sweep code, starts, record_count, states, executable
+        str next_states = ir_sccp_unpack_left packed
+        str next_exec = ir_sccp_unpack_right packed
+        states = next_states
+        executable = next_exec
+        sys.free packed
+        pass = pass add 1
+    ]
+
+    str out = ir_sccp_rewrite code, starts, record_count, states
+    sys.free starts
+    = out
+]

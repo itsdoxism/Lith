@@ -73,8 +73,8 @@ frontend rewrite.
 
 ## Middle-end validation and optimization
 
-Function bodies pass through a target-neutral middle-end before any backend
-lowering:
+Function bodies pass through a target-neutral, verified middle-end before any
+backend lowering:
 
 ```text
 parsed + typed function
@@ -86,7 +86,19 @@ raw Lith IR
 IR validator
         |
         v
-IR optimizer
+constant/alias optimizer
+        |
+        v
+IR validator
+        |
+        v
+DCE/indexed cleanup
+        |
+        v
+IR validator
+        |
+        v
+CFG reachability + unreachable-block pruning
         |
         v
 IR validator
@@ -94,6 +106,11 @@ IR validator
         v
 selected backend
 ```
+
+`ir_run_optimization_pipeline` is the central pass manager. Every transform is
+verified before the next pass consumes its output, so malformed target-neutral
+IR fails at the pass boundary instead of surfacing later as backend-specific
+LLVM damage.
 
 The validator checks the internal record shape, opcode set, SSA temporary
 use/definition ordering, branch targets, phi predecessors, call payloads, and
@@ -107,12 +124,35 @@ passes include:
 - simplification of constant conditional branches
 - immediate store-to-load forwarding for the same local address
 - dead-value elimination for pure IR operations only
-- pruning of unreferenced compiler-generated `dead.*` basic blocks
+- indexed dead-value cleanup
+- CFG reachability from the implicit `entry` block
+- removal of unreachable basic blocks regardless of generated label spelling
+- pruning of phi incoming edges whose predecessor blocks were removed
 
 Side-effecting operations (`call`, `store`, allocation, free, printing, and
-control-flow terminators) are never removed by dead-value elimination. Backend-
-specific peepholes remain the backend's responsibility; language semantics and
-middle-end transforms must not depend on LLVM spelling.
+control-flow terminators) are never removed by dead-value elimination. Whole
+blocks containing side effects may still disappear when CFG analysis proves the
+block unreachable. Backend-specific peepholes remain the backend's
+responsibility; language semantics and middle-end transforms must not depend on
+LLVM spelling.
+
+## CFG analysis
+
+`compiler/src/28_ir_cfg.lith` treats the records before the first explicit label
+as the implicit `entry` block. Reachability propagates through `branch` and
+`cbranch` successors and conservatively supports block fallthrough. The analysis
+repeats for at most the number of blocks, which is sufficient to reach a fixed
+point even when a reachable back-edge discovers an earlier label on a later
+scan.
+
+The pruning pass emits only reachable blocks. Reachable phi records are rebuilt
+with incoming pairs from reachable predecessors, preventing stale predecessor
+labels from surviving after block removal. The IR validator runs immediately
+after this transform.
+
+This replaces label-name-based cleanup as the correctness mechanism: an
+ordinary `if.else` block made unreachable by constant branch folding is removed
+just like a compiler-generated `dead.*` block.
 
 ## Indexed IR storage
 
@@ -124,8 +164,8 @@ kept records in one forward pass.
 
 The shared string-table helpers also avoid allocating temporary key/value
 slices for every `map_get` probe; only a matched value is materialized. This is
-important because symbol tables, validator state, and optimizer alias maps all
-use the same compact map representation.
+important because symbol tables, validator state, optimizer alias maps, and CFG
+reachability all use the same compact map representation.
 
 On the self-host compiler workload used during this migration, peak memory fell
 from roughly 631 MB to about 52 MB while preserving the fixed point. The number

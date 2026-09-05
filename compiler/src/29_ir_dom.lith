@@ -1,0 +1,167 @@
+# Target-neutral block and dominator analysis for Lith IR.
+
+fn ir_dom_slot [int row, int col, int width] int [
+    = row mul width add col
+]
+
+fn ir_dom_block_count [str code, ptr int starts, int record_count] int [
+    = ir_cfg_label_count code, starts, record_count add 1
+]
+
+fn ir_dom_block_for_label [str code, ptr int starts, int record_count, str label] int [
+    if [str.eq label, 'entry'] [ = 0 ]
+    int block = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        if [str.eq op, 'label'] [
+            block = block add 1
+            str name = ir_index_field code, starts, i, 1
+            if [str.eq name, label] [
+                sys.free op
+                sys.free name
+                = block
+            ]
+            sys.free name
+        ]
+        sys.free op
+        i = i add 1
+    ]
+    = 0 sub 1
+]
+
+fn ir_dom_add_edge [ptr int edges, int block_count, int from, int to] int [
+    if [from lt 0 or to lt 0 or from ge block_count or to ge block_count] [ = 0 ]
+    int slot = ir_dom_slot from, to, block_count
+    edges[slot] = 1
+    = 0
+]
+
+fn ir_dom_build_edges [str code, ptr int starts, int record_count, int block_count, ptr int edges] int [
+    int total = block_count mul block_count
+    int z = 0
+    while [z lt total] [ edges[z] = 0 z = z add 1 ]
+
+    int block = 0
+    int terminated = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+
+        if [str.eq op, 'label'] [
+            int next_block = block add 1
+            if [terminated eq 0] [ ir_dom_add_edge edges, block_count, block, next_block ]
+            block = next_block
+            terminated = 0
+        ]
+        else [
+            if [str.eq op, 'branch'] [
+                int target = ir_dom_block_for_label code, starts, record_count, a
+                ir_dom_add_edge edges, block_count, block, target
+                terminated = 1
+            ]
+            if [str.eq op, 'cbranch'] [
+                int yes = ir_dom_block_for_label code, starts, record_count, b
+                int no = ir_dom_block_for_label code, starts, record_count, c
+                ir_dom_add_edge edges, block_count, block, yes
+                ir_dom_add_edge edges, block_count, block, no
+                terminated = 1
+            ]
+            if [str.eq op, 'return' or str.eq op, 'unreachable'] [ terminated = 1 ]
+        ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        i = i add 1
+    ]
+    = 0
+]
+
+# dom[B,D] means D dominates B.
+fn ir_dom_compute [ptr int edges, int block_count, ptr int dom] int [
+    int b = 0
+    while [b lt block_count] [
+        int d = 0
+        while [d lt block_count] [
+            int slot = ir_dom_slot b, d, block_count
+            if [b eq 0] [
+                if [d eq 0] [ dom[slot] = 1 ]
+                else [ dom[slot] = 0 ]
+            ]
+            else [ dom[slot] = 1 ]
+            d = d add 1
+        ]
+        b = b add 1
+    ]
+
+    int pass = 0
+    while [pass lt block_count] [
+        b = 1
+        while [b lt block_count] [
+            int d = 0
+            while [d lt block_count] [
+                int next = 0
+                if [d eq b] [ next = 1 ]
+                else [
+                    int has_pred = 0
+                    int all_preds = 1
+                    int p = 0
+                    while [p lt block_count] [
+                        int edge_slot = ir_dom_slot p, b, block_count
+                        if [edges[edge_slot]] [
+                            has_pred = 1
+                            int pred_dom_slot = ir_dom_slot p, d, block_count
+                            if [dom[pred_dom_slot] eq 0] [ all_preds = 0 ]
+                        ]
+                        p = p add 1
+                    ]
+                    if [has_pred and all_preds] [ next = 1 ]
+                ]
+                int out_slot = ir_dom_slot b, d, block_count
+                dom[out_slot] = next
+                d = d add 1
+            ]
+            b = b add 1
+        ]
+        pass = pass add 1
+    ]
+    = 0
+]
+
+fn ir_dom_dominates [ptr int dom, int block_count, int dominator, int block] int [
+    if [dominator lt 0 or block lt 0 or dominator ge block_count or block ge block_count] [ = 0 ]
+    int slot = ir_dom_slot block, dominator, block_count
+    = dom[slot]
+]
+
+fn ir_dom_verify [str code] int [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+    int block_count = ir_dom_block_count code, starts, record_count
+    int matrix_size = block_count mul block_count
+    ptr int edges = sys.alloc matrix_size
+    ptr int dom = sys.alloc matrix_size
+    ir_dom_build_edges code, starts, record_count, block_count, edges
+    ir_dom_compute edges, block_count, dom
+
+    int ok = 1
+    int b = 0
+    while [b lt block_count] [
+        if [not ir_dom_dominates dom, block_count, b, b] [ ok = 0 ]
+        if [b gt 0 and not ir_dom_dominates dom, block_count, 0, b] [ ok = 0 ]
+        b = b add 1
+    ]
+    if [ok eq 0] [ ir_validation_error 'middle-end dominator invariant failed' ]
+
+    sys.free starts
+    sys.free edges
+    sys.free dom
+    = ok
+]

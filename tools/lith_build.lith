@@ -1,0 +1,167 @@
+use fs
+use path
+use process
+use bytes
+
+fn fail_step [str step, int status] int [
+    print str.concat 'build failed: ', step
+    = status
+]
+
+fn run [str program, str args, str step] int [
+    int status = process.exec program, args
+    if [status ne 0] [ = fail_step step, status ]
+    = 0
+]
+
+fn append_source [str whole, str file] str [
+    str part = fs.read_text file
+    if [not part] [
+        print str.concat 'cannot read compiler module: ', file
+        = whole
+    ]
+    str with_part = str.concat whole, part
+    = str.concat with_part, str.chr 10
+]
+
+fn compiler_source [] str [
+    str out = ''
+    out = append_source out, 'compiler/src/00_state_types.lith'
+    out = append_source out, 'compiler/src/05_modules.lith'
+    out = append_source out, 'compiler/src/10_lexer.lith'
+    out = append_source out, 'compiler/src/20_symbols.lith'
+    out = append_source out, 'compiler/src/25_ir.lith'
+    out = append_source out, 'compiler/src/26_ir_validate.lith'
+    out = append_source out, 'compiler/src/27_ir_index.lith'
+    out = append_source out, 'compiler/src/27_ir_optimize.lith'
+    out = append_source out, 'compiler/src/28_ir_cfg.lith'
+    out = append_source out, 'compiler/src/29_ir_dom.lith'
+    out = append_source out, 'compiler/src/29_ir_dom_tree.lith'
+    out = append_source out, 'compiler/src/29_ir_use_def.lith'
+    out = append_source out, 'compiler/src/29_ir_ssa_validate.lith'
+    out = append_source out, 'compiler/src/30_ir_mem2reg.lith'
+    out = append_source out, 'compiler/src/31_ir_mem2reg_ssa.lith'
+    out = append_source out, 'compiler/src/32_ir_mem2reg_multi.lith'
+    out = append_source out, 'compiler/src/33_ir_mem2reg_loop.lith'
+    out = append_source out, 'compiler/src/34_ir_sccp.lith'
+    out = append_source out, 'compiler/src/35_ir_sccp_edges.lith'
+    out = append_source out, 'compiler/src/36_ir_cfg_simplify.lith'
+    out = append_source out, 'compiler/src/37_ir_cfg_merge.lith'
+    out = append_source out, 'compiler/src/38_ir_gvn.lith'
+    out = append_source out, 'compiler/src/39_ir_licm.lith'
+    out = append_source out, 'compiler/src/backend/llvm/25_core.lith'
+    out = append_source out, 'compiler/src/backend/llvm/26_ops.lith'
+    out = append_source out, 'compiler/src/backend/llvm/27_lower.lith'
+    out = append_source out, 'compiler/src/backend/llvm/28_module.lith'
+    out = append_source out, 'compiler/src/30_operators.lith'
+    out = append_source out, 'compiler/src/30_core_values.lith'
+    out = append_source out, 'compiler/src/31_expressions.lith'
+    out = append_source out, 'compiler/src/40_memory_arrays.lith'
+    out = append_source out, 'compiler/src/50_match_print.lith'
+    out = append_source out, 'compiler/src/60_statements.lith'
+    out = append_source out, 'compiler/src/70_scanner.lith'
+    out = append_source out, 'compiler/src/75_global_constants.lith'
+    out = append_source out, 'compiler/src/80_emitter_main.lith'
+    = out
+]
+
+fn clang_program [] str [
+    str value = process.env 'CLANG'
+    if [value] [ = value ]
+    = 'clang'
+]
+
+fn trusted_seed [] str [
+    str explicit = process.env 'LITH_SEED'
+    if [explicit] [ = explicit ]
+    str bundled = 'bootstrap/seed/lithc-linux-x86_64'
+    if [fs.exists bundled] [ = bundled ]
+    = ''
+]
+
+fn compile_native [str clang, str llvm, str output] int [
+    str args = '-Wno-override-module\n-O2\n'
+    args = str.concat args, llvm
+    args = str.concat args, '\nruntime/luna_runtime.ll\n-o\n'
+    args = str.concat args, output
+    = run clang, args, output
+]
+
+fn build_driver [str clang] int [
+    int emit = run 'build/lithc', 'tools/lith_driver.lith\nbuild/lith-driver.ll', 'emit Lith driver'
+    if [emit ne 0] [ = emit ]
+
+    str args = '-Wno-override-module\n-O2\nbuild/lith-driver.ll\nruntime/luna_runtime.ll\nruntime/lith_bytes.ll\nruntime/lith_fs.ll\nruntime/lith_fs_posix.ll\nruntime/lith_path.ll\nruntime/lith_process_posix.ll\n-o\nbuild/lith-driver'
+    = run clang, args, 'link Lith driver'
+]
+
+fn same_file [str left_path, str right_path] int [
+    bytes left = fs.read_bytes left_path
+    if [not left] [
+        print str.concat 'cannot read verification file: ', left_path
+        = 0
+    ]
+    bytes right = fs.read_bytes right_path
+    if [not right] [
+        bytes.free left
+        print str.concat 'cannot read verification file: ', right_path
+        = 0
+    ]
+
+    int same = bytes.eq left, right
+    bytes.free left
+    bytes.free right
+    = same
+]
+
+fn verify_self_host [] int [
+    int stage3 = run 'build/lithc', 'build/lithc.lith\nbuild/lithc-stage3.ll', 'stage3 self-host emission'
+    if [stage3 ne 0] [ = stage3 ]
+
+    if [same_file 'build/lithc-stage2.ll', 'build/lithc-stage3.ll' eq 0] [
+        print 'self-host verification failed: stage2 and stage3 LLVM IR differ'
+        = 90
+    ]
+
+    int stage4 = run 'build/lithc', 'build/lithc.lith\nbuild/lithc-stage4.ll', 'stage4 self-host emission'
+    if [stage4 ne 0] [ = stage4 ]
+    if [same_file 'build/lithc-stage3.ll', 'build/lithc-stage4.ll' eq 0] [
+        print 'self-host verification failed: stage3 and stage4 LLVM IR differ'
+        = 91
+    ]
+
+    print 'Lith self-host equality: stage2 == stage3 == stage4'
+    = 0
+]
+
+fn main [int argc, ptr str argv] int [
+    fs.mkdir 'build'
+
+    str source = compiler_source []
+    if [str.len source eq 0] [ = 10 ]
+    if [fs.write_text 'build/lithc.lith', source eq 0] [ = 11 ]
+
+    str clang = clang_program []
+    str seed = trusted_seed []
+    if [not seed] [
+        print 'Lith bootstrap failed: trusted seed is required'
+        print 'set LITH_SEED or install bootstrap/seed/lithc-linux-x86_64'
+        = 12
+    ]
+
+    print str.concat 'Lith bootstrap seed: ', seed
+    int stage2 = run seed, 'build/lithc.lith\nbuild/lithc-stage2.ll', 'seed compile'
+    if [stage2 ne 0] [ = stage2 ]
+
+    int compiler_link = compile_native clang, 'build/lithc-stage2.ll', 'build/lithc'
+    if [compiler_link ne 0] [ = compiler_link ]
+
+    int verified = verify_self_host []
+    if [verified ne 0] [ = verified ]
+
+    int driver = build_driver clang
+    if [driver ne 0] [ = driver ]
+
+    print 'Lith-native compiler build: passed'
+    = 0
+]

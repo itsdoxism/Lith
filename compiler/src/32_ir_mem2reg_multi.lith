@@ -1,0 +1,282 @@
+# Conservative multi-block mem2reg emission.
+#
+# Forward CFGs use the direct predecessor-value path below. Functions with
+# back-edges are delegated to 33_ir_mem2reg_loop.lith, which reserves phi
+# results before rewriting and fills loop phi payloads in a second pass.
+
+fn ir_m2r_ssa_label_for_block [str code, ptr int starts, int record_count, int wanted] str [
+    if [wanted eq 0] [ = 'entry' ]
+    int block = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        if [str.eq op, 'label'] [
+            block = block add 1
+            if [block eq wanted] [
+                str label = ir_index_field code, starts, i, 1
+                sys.free op
+                = label
+            ]
+        ]
+        sys.free op
+        i = i add 1
+    ]
+    = ''
+]
+
+fn ir_m2r_ssa_value_get [str values, str slot, int block] str [
+    str key = ir_m2r_ssa_key slot, block
+    str value = map_get values, key
+    sys.free key
+    = value
+]
+
+fn ir_m2r_ssa_value_put [str values, str slot, int block, str value] str [
+    str key = ir_m2r_ssa_key slot, block
+    str out = map_put values, key, value
+    sys.free key
+    = out
+]
+
+fn ir_m2r_ssa_rewrite_record [str aliases, str op, str a, str b, str c, str d, str e] str [
+    if [str.eq op, 'load'] [ c = ir_resolve_alias aliases, c ]
+    if [str.eq op, 'store'] [
+        b = ir_resolve_alias aliases, b
+        c = ir_resolve_alias aliases, c
+    ]
+    if [str.eq op, 'array_addr' or str.eq op, 'pointer_addr'] [
+        c = ir_resolve_alias aliases, c
+        d = ir_resolve_alias aliases, d
+    ]
+    if [str.eq op, 'field_addr'] [ c = ir_resolve_alias aliases, c ]
+    if [str.eq op, 'truthy_pointer' or str.eq op, 'truthy_float' or str.eq op, 'truthy_int' or str.eq op, 'not_bool'] [
+        b = ir_resolve_alias aliases, b
+    ]
+    if [str.eq op, 'bool_to_int' or str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [
+        b = ir_resolve_alias aliases, b
+    ]
+    if [str.eq op, 'logic' or str.eq op, 'compare_int' or str.eq op, 'compare_bool' or str.eq op, 'compare_pointer' or str.eq op, 'compare_float' or str.eq op, 'arith_int' or str.eq op, 'arith_float'] [
+        c = ir_resolve_alias aliases, c
+        d = ir_resolve_alias aliases, d
+    ]
+    if [str.eq op, 'cbranch'] [ a = ir_resolve_alias aliases, a ]
+    if [str.eq op, 'return'] [ b = ir_resolve_alias aliases, b ]
+    if [str.eq op, 'alloc'] [ c = ir_resolve_alias aliases, c ]
+    if [str.eq op, 'realloc'] [
+        c = ir_resolve_alias aliases, c
+        d = ir_resolve_alias aliases, d
+    ]
+    if [str.eq op, 'free' or str.eq op, 'print_line'] [ a = ir_resolve_alias aliases, a ]
+    if [str.eq op, 'call'] [
+        int argc = ir_parse_count_text d
+        e = ir_rewrite_args aliases, e, argc
+    ]
+    if [str.eq op, 'phi'] [
+        int pc = ir_parse_count_text c
+        e = ir_rewrite_phi_payload aliases, e, pc
+    ]
+    = ir_encode_record op, a, b, c, d, e
+]
+
+fn ir_m2r_ssa_emit_block_phis [str code, ptr int starts, int record_count, str slots, str unsafe, str plan, ptr int edges, int block_count, int block, str values] str [
+    str result = ''
+    str next_values = values
+    int i = 0
+    while [i lt record_count and g_fatal_error eq 0] [
+        str op = ir_index_field code, starts, i, 0
+        str slot = ir_index_field code, starts, i, 1
+        if [str.eq op, 'stack_alloc'] [
+            if [ir_m2r_ssa_promotable slots, unsafe, slot] [
+                str typ = map_get slots, slot
+                int pred_count = 0
+                int all_same = 1
+                str first = ''
+                str payload = ''
+                int pred = 0
+                while [pred lt block_count and g_fatal_error eq 0] [
+                    int edge_slot = ir_dom_slot pred, block, block_count
+                    if [edges[edge_slot]] [
+                        str incoming = ir_m2r_ssa_value_get next_values, slot, pred
+                        if [str.eq incoming, ''] [
+                            ir_validation_error 'multi-block mem2reg predecessor has no current value'
+                        ]
+                        else [
+                            if [pred_count eq 0] [ first = str.slice incoming, 0, str.len incoming ] ]
+                            else [
+                                if [not str.eq first, incoming] [ all_same = 0 ]
+                            ]
+                            str pred_label = ir_m2r_ssa_label_for_block code, starts, record_count, pred
+                            str pair = ir_arg_pair incoming, pred_label
+                            payload = ir_append_owned payload, pair
+                            sys.free pair
+                            sys.free pred_label
+                            pred_count = pred_count add 1
+                        ]
+                        sys.free incoming
+                    ]
+                    pred = pred add 1
+                ]
+
+                if [g_fatal_error eq 0 and pred_count gt 0] [
+                    if [pred_count eq 1 or all_same] [
+                        next_values = ir_m2r_ssa_value_put next_values, slot, block, first
+                    ]
+                    else [
+                        if [not ir_m2r_ssa_has plan, slot, block] [
+                            ir_validation_error 'multi-block mem2reg missing planned phi'
+                        ]
+                        else [
+                            str phi = ir_new_value 0
+                            str count_text = int.str pred_count
+                            str encoded = ir_encode_record 'phi', phi, typ, count_text, '', payload
+                            result = ir_append_owned result, encoded
+                            next_values = ir_m2r_ssa_value_put next_values, slot, block, phi
+                            sys.free encoded
+                            sys.free count_text
+                            sys.free phi
+                        ]
+                    ]
+                ]
+                sys.free typ
+                sys.free first
+                sys.free payload
+            ]
+        ]
+        sys.free op
+        sys.free slot
+        i = i add 1
+    ]
+
+    str marker = str.chr 30
+    str packed = str.concat result, marker
+    packed = str.concat packed, next_values
+    sys.free result
+    sys.free marker
+    = packed
+]
+
+fn ir_m2r_ssa_unpack_left [str packed] str [
+    int n = str.len packed
+    int i = 0
+    while [i lt n and str.at packed, i ne 30] [ i = i add 1 ]
+    = str.slice packed, 0, i
+]
+
+fn ir_m2r_ssa_unpack_right [str packed] str [
+    int n = str.len packed
+    int i = 0
+    while [i lt n and str.at packed, i ne 30] [ i = i add 1 ]
+    if [i ge n] [ = '' ]
+    int start = i add 1
+    = str.slice packed, start, n
+]
+
+fn ir_mem2reg_multi_block [str code] str [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+
+    int block_count = ir_dom_block_count code, starts, record_count
+    int matrix_size = block_count mul block_count
+    ptr int edges = sys.alloc matrix_size
+    ptr int dom = sys.alloc matrix_size
+    ptr int frontier = sys.alloc matrix_size
+    ir_dom_build_edges code, starts, record_count, block_count, edges
+
+    if [ir_m2r_ssa_has_backedge edges, block_count] [
+        sys.free starts
+        sys.free edges
+        sys.free dom
+        sys.free frontier
+        = ir_mem2reg_loop code
+    ]
+
+    ir_dom_compute edges, block_count, dom
+    ir_dom_compute_frontier edges, dom, block_count, frontier
+    str slots = ir_m2r_ssa_collect_entry_slots code, starts, record_count
+    str unsafe = ir_m2r_ssa_collect_unsafe code, starts, record_count, slots
+    str defs = ir_m2r_ssa_collect_def_blocks code, starts, record_count, slots, unsafe
+    str plan = ir_m2r_ssa_place_phis code, starts, record_count, slots, unsafe, defs, frontier, block_count
+
+    str aliases = ''
+    str values = ''
+    str out = str.slice '', 0, 0
+    int block = 0
+    int i = 0
+    while [i lt record_count and g_fatal_error eq 0] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+        int emit = 1
+
+        if [str.eq op, 'label'] [
+            block = block add 1
+            str label_line = ir_encode_record op, a, b, c, d, e
+            out = ir_append_owned out, label_line
+            sys.free label_line
+            emit = 0
+
+            str packed = ir_m2r_ssa_emit_block_phis code, starts, record_count, slots, unsafe, plan, edges, block_count, block, values
+            str phi_lines = ir_m2r_ssa_unpack_left packed
+            str next_values = ir_m2r_ssa_unpack_right packed
+            out = ir_append_owned out, phi_lines
+            values = next_values
+            sys.free packed
+            sys.free phi_lines
+        ]
+        else [
+            if [str.eq op, 'stack_alloc'] [
+                if [ir_m2r_ssa_promotable slots, unsafe, a] [ emit = 0 ]
+            ]
+            if [str.eq op, 'load'] [
+                if [ir_m2r_ssa_promotable slots, unsafe, c] [
+                    str current = ir_m2r_ssa_value_get values, c, block
+                    if [str.eq current, ''] [
+                        ir_validation_error 'multi-block mem2reg load has no current value'
+                    ]
+                    else [
+                        aliases = map_put aliases, a, current
+                        emit = 0
+                    ]
+                    sys.free current
+                ]
+            ]
+            if [str.eq op, 'store'] [
+                b = ir_resolve_alias aliases, b
+                if [ir_m2r_ssa_promotable slots, unsafe, c] [
+                    values = ir_m2r_ssa_value_put values, c, block, b
+                    emit = 0
+                ]
+            ]
+
+            if [emit and g_fatal_error eq 0] [
+                str encoded = ir_m2r_ssa_rewrite_record aliases, op, a, b, c, d, e
+                out = ir_append_owned out, encoded
+                sys.free encoded
+            ]
+        ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i add 1
+    ]
+
+    sys.free starts
+    sys.free edges
+    sys.free dom
+    sys.free frontier
+
+    if [g_fatal_error] [
+        sys.free out
+        = ''
+    ]
+    = out
+]

@@ -1,0 +1,149 @@
+# Dominance-aware SSA validation for verified CFG IR.
+#
+# Structural validation remains responsible for record shape, opcode fields,
+# duplicate definitions, and ordinary serialized-order uses. Phi operands are
+# edge uses: an incoming value for predecessor P must be available at the end of
+# P, not necessarily before the phi record in serialized order. This module
+# validates that rule after CFG pruning has removed unreachable blocks.
+
+fn ir_ssa_def_key [str value, str field] str [
+    str prefix = str.concat value, '@'
+    str key = str.concat prefix, field
+    sys.free prefix
+    = key
+]
+
+fn ir_ssa_note_def [str defs, str value, int block, int record] str [
+    if [not ir_value_is_temp value] [ = defs ]
+    str block_key = ir_ssa_def_key value, 'block'
+    str record_key = ir_ssa_def_key value, 'record'
+    str block_text = int.str block
+    str record_text = int.str record
+    defs = map_put defs, block_key, block_text
+    defs = map_put defs, record_key, record_text
+    sys.free block_key
+    sys.free record_key
+    sys.free block_text
+    sys.free record_text
+    = defs
+]
+
+fn ir_ssa_result_op [str op] int [
+    if [ir_is_pure_result_op op] [ = 1 ]
+    if [str.eq op, 'call' or str.eq op, 'alloc' or str.eq op, 'realloc'] [ = 1 ]
+    = 0
+]
+
+fn ir_ssa_collect_defs [str code, ptr int starts, int record_count] str [
+    str defs = ''
+    int block = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        if [str.eq op, 'label'] [ block = block add 1 ]
+        if [ir_ssa_result_op op] [ defs = ir_ssa_note_def defs, a, block, i ]
+        sys.free op
+        sys.free a
+        i = i add 1
+    ]
+    = defs
+]
+
+fn ir_ssa_def_block [str defs, str value] int [
+    if [not ir_value_is_temp value] [ = 0 sub 1 ]
+    str key = ir_ssa_def_key value, 'block'
+    str text = map_get defs, key
+    sys.free key
+    if [str.eq text, ''] [ = 0 sub 1 ]
+    = ir_parse_count_text text
+]
+
+fn ir_ssa_def_record [str defs, str value] int [
+    if [not ir_value_is_temp value] [ = 0 sub 1 ]
+    str key = ir_ssa_def_key value, 'record'
+    str text = map_get defs, key
+    sys.free key
+    if [str.eq text, ''] [ = 0 sub 1 ]
+    = ir_parse_count_text text
+]
+
+fn ir_ssa_validate_phi_value [str defs, ptr int dom, int block_count, int pred_block, str value] int [
+    if [not ir_value_is_temp value] [ = 1 ]
+    int def_block = ir_ssa_def_block defs, value
+    if [def_block lt 0] [
+        ir_validation_error 'phi uses undefined temporary value'
+        = 0
+    ]
+
+    # A value defined inside predecessor P is available on P's outgoing edge.
+    # Otherwise its defining block must dominate P.
+    if [def_block eq pred_block] [ = 1 ]
+    if [ir_dom_dominates dom, block_count, def_block, pred_block] [ = 1 ]
+    ir_validation_error 'phi incoming value does not dominate predecessor edge'
+    = 0
+]
+
+fn ir_ssa_validate_phi_edges_and_values [str code, ptr int starts, int record_count, ptr int edges, ptr int dom, int block_count, str defs] int [
+    int block = 0
+    int i = 0
+    while [i lt record_count and g_fatal_error eq 0] [
+        str op = ir_index_field code, starts, i, 0
+        str c = ir_index_field code, starts, i, 3
+        str e = ir_index_field code, starts, i, 5
+        if [str.eq op, 'label'] [ block = block add 1 ]
+
+        if [str.eq op, 'phi'] [
+            int count = ir_parse_count_text c
+            int p = 0
+            while [p lt count and g_fatal_error eq 0] [
+                str pair = ir_list_item e, p
+                str value = ir_pair_left pair
+                str pred = ir_pair_right pair
+                int pred_block = ir_dom_block_for_label code, starts, record_count, pred
+                if [pred_block lt 0] [
+                    ir_validation_error 'phi predecessor block is missing'
+                ]
+                else [
+                    int edge_slot = ir_dom_slot pred_block, block, block_count
+                    if [edges[edge_slot] eq 0] [
+                        ir_validation_error 'phi predecessor is not a CFG edge'
+                    ]
+                    else [ ir_ssa_validate_phi_value defs, dom, block_count, pred_block, value ]
+                ]
+                sys.free pair
+                sys.free value
+                sys.free pred
+                p = p add 1
+            ]
+        ]
+
+        sys.free op
+        sys.free c
+        sys.free e
+        i = i add 1
+    ]
+    = g_fatal_error eq 0
+]
+
+fn ir_validate_ssa_dominance [str code] int [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+
+    int block_count = ir_dom_block_count code, starts, record_count
+    int matrix_size = block_count mul block_count
+    ptr int edges = sys.alloc matrix_size
+    ptr int dom = sys.alloc matrix_size
+    ir_dom_build_edges code, starts, record_count, block_count, edges
+    ir_dom_compute edges, block_count, dom
+    str defs = ir_ssa_collect_defs code, starts, record_count
+
+    int ok = ir_ssa_validate_phi_edges_and_values code, starts, record_count, edges, dom, block_count, defs
+
+    sys.free starts
+    sys.free edges
+    sys.free dom
+    = ok
+]

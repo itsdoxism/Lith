@@ -1,0 +1,118 @@
+use fs
+use bytes
+use process
+use path
+
+fn main [int argc, ptr str argv] int [
+    if [argc lt 1] [ = 1 ]
+    if [not argv[0]] [ = 2 ]
+
+    str path = '/tmp/lith-native-surfaces.txt'
+    int wrote = fs.write_text path, 'Lith bytes'
+    if [wrote eq 0] [ = 10 ]
+    if [fs.exists path eq 0] [ = 17 ]
+
+    str text = fs.read_text path
+    if [not text] [ = 11 ]
+
+    bytes raw = bytes.from_str text
+    if [not raw] [ = 12 ]
+    if [bytes.len raw ne 10] [ = 13 ]
+    if [bytes.at raw, 0 ne 76] [ = 14 ]
+
+    bytes head = bytes.slice raw, 0, 4
+    bytes lith = bytes.from_str 'Lith'
+    if [bytes.eq head, lith eq 0] [ = 15 ]
+
+    bytes suffix = bytes.from_str ' native'
+    bytes joined = bytes.concat head, suffix
+    str joined_text = bytes.to_str joined
+    if [str.eq joined_text, 'Lith native' eq 0] [ = 16 ]
+
+    bytes binary = bytes.alloc 3
+    if [not binary] [ = 20 ]
+    if [bytes.set binary, 0, 65 eq 0] [ = 21 ]
+    if [bytes.set binary, 1, 0 eq 0] [ = 22 ]
+    if [bytes.set binary, 2, 66 eq 0] [ = 23 ]
+    if [bytes.len binary ne 3] [ = 24 ]
+    if [bytes.at binary, 0 ne 65] [ = 25 ]
+    if [bytes.at binary, 1 ne 0] [ = 26 ]
+    if [bytes.at binary, 2 ne 66] [ = 27 ]
+    if [not bytes.ptr binary] [ = 28 ]
+
+    str binary_path = '/tmp/lith-native-surfaces.bin'
+    if [fs.write_bytes binary_path, binary eq 0] [ = 40 ]
+    if [fs.exists binary_path eq 0] [ = 47 ]
+    bytes loaded = fs.read_bytes binary_path
+    if [not loaded] [ = 41 ]
+    if [bytes.len loaded ne 3] [ = 42 ]
+    if [bytes.at loaded, 0 ne 65] [ = 43 ]
+    if [bytes.at loaded, 1 ne 0] [ = 44 ]
+    if [bytes.at loaded, 2 ne 66] [ = 45 ]
+    if [bytes.eq loaded, binary eq 0] [ = 46 ]
+
+    str renamed_path = '/tmp/lith-native-surfaces-renamed.bin'
+    if [fs.rename binary_path, renamed_path eq 0] [ = 48 ]
+    if [fs.exists binary_path] [ = 49 ]
+    if [fs.exists renamed_path eq 0] [ = 50 ]
+    if [fs.remove renamed_path eq 0] [ = 51 ]
+    if [fs.exists renamed_path] [ = 52 ]
+    if [fs.remove path eq 0] [ = 53 ]
+    if [fs.exists path] [ = 54 ]
+
+    str joined_path = path.join 'compiler/src', '30_operators.lith'
+    if [str.eq joined_path, 'compiler/src/30_operators.lith' eq 0] [ = 60 ]
+    str base = path.basename '/tmp/archive.tar.gz'
+    if [str.eq base, 'archive.tar.gz' eq 0] [ = 61 ]
+    str dir = path.dirname '/tmp/archive.tar.gz'
+    if [str.eq dir, '/tmp' eq 0] [ = 62 ]
+    str extension = path.ext '/tmp/archive.tar.gz'
+    if [str.eq extension, '.gz' eq 0] [ = 63 ]
+    str normalized = path.normalize 'compiler\\src//backend\\llvm'
+    if [str.eq normalized, 'compiler/src/backend/llvm' eq 0] [ = 64 ]
+
+    str workdir = '/tmp/lith-native-dir'
+    str entry = '/tmp/lith-native-dir/entry.txt'
+    fs.remove entry
+    fs.rmdir workdir
+    if [fs.mkdir workdir eq 0] [ = 70 ]
+    if [fs.write_text entry, 'entry' eq 0] [ = 71 ]
+    str names = fs.list workdir
+    if [not names] [ = 72 ]
+    str nl = str.chr 10
+    str expected_names = str.concat 'entry.txt', nl
+    if [str.eq names, expected_names eq 0] [ = 73 ]
+    str before_cwd = fs.cwd []
+    if [not before_cwd] [ = 74 ]
+    if [fs.chdir workdir eq 0] [ = 75 ]
+    str inside_cwd = fs.cwd []
+    if [str.eq inside_cwd, workdir eq 0] [ = 76 ]
+    if [fs.chdir before_cwd eq 0] [ = 77 ]
+    if [fs.remove entry eq 0] [ = 78 ]
+    if [fs.rmdir workdir eq 0] [ = 79 ]
+    sys.free names
+    sys.free nl
+    sys.free expected_names
+    sys.free before_cwd
+    sys.free inside_cwd
+
+    str path_env = process.env 'PATH'
+    if [not path_env] [ = 30 ]
+
+    # Direct execution bypasses shell command parsing entirely.
+    int direct_status = process.exec 'true', ''
+    if [direct_status ne 0] [ = 31 ]
+    int pid = process.spawn 'true', ''
+    if [pid lt 0] [ = 32 ]
+    int waited = process.wait pid
+    if [waited ne 0] [ = 33 ]
+
+    bytes.free loaded
+    bytes.free binary
+    bytes.free raw
+    bytes.free head
+    bytes.free lith
+    bytes.free suffix
+    bytes.free joined
+    = 0
+]

@@ -1,0 +1,153 @@
+# Dominator-aware global value numbering / common-subexpression elimination.
+#
+# Only deterministic, side-effect-free SSA operations participate. A previous
+# expression may replace the current result only when its defining block
+# dominates the current block. Memory reads, calls, allocation and phi nodes are
+# intentionally excluded from this first GVN stage.
+
+fn ir_gvn_candidate [str op] int [
+    if [str.eq op, 'truthy_int' or str.eq op, 'not_bool' or str.eq op, 'bool_to_int'] [ = 1 ]
+    if [str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [ = 1 ]
+    if [str.eq op, 'logic' or str.eq op, 'compare_int' or str.eq op, 'compare_bool'] [ = 1 ]
+    if [str.eq op, 'arith_int'] [ = 1 ]
+    if [str.eq op, 'array_addr' or str.eq op, 'pointer_addr' or str.eq op, 'field_addr'] [ = 1 ]
+    = 0
+]
+
+fn ir_gvn_key [str op, str a, str b, str c, str d, str e] str [
+    # Result id `a` is deliberately excluded: equal operations with equal
+    # resolved inputs should receive the same value number.
+    str out = str.concat op, '|'
+    out = str.concat out, b
+    out = str.concat out, '|'
+    out = str.concat out, c
+    out = str.concat out, '|'
+    out = str.concat out, d
+    out = str.concat out, '|'
+    out = str.concat out, e
+    = out
+]
+
+fn ir_gvn_value_key [str expr] str [ = str.concat 'v:', expr ]
+fn ir_gvn_block_key [str expr] str [ = str.concat 'b:', expr ]
+
+fn ir_gvn_note [str table, str expr, str value, int block] str [
+    str value_key = ir_gvn_value_key expr
+    str block_key = ir_gvn_block_key expr
+    str block_text = int.str block
+    str out = map_put table, value_key, value
+    out = map_put out, block_key, block_text
+    sys.free value_key
+    sys.free block_key
+    sys.free block_text
+    = out
+]
+
+fn ir_gvn_lookup_value [str table, str expr] str [
+    str key = ir_gvn_value_key expr
+    str value = map_get table, key
+    sys.free key
+    = value
+]
+
+fn ir_gvn_lookup_block [str table, str expr] int [
+    str key = ir_gvn_block_key expr
+    str text = map_get table, key
+    sys.free key
+    if [str.eq text, ''] [ = 0 sub 1 ]
+    = ir_parse_count_text text
+]
+
+fn ir_gvn_rewrite_operands [str aliases, str op, str a, str b, str c, str d, str e] str [
+    = ir_m2r_ssa_rewrite_record aliases, op, a, b, c, d, e
+]
+
+fn ir_gvn_optimize [str code] str [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+
+    int block_count = ir_dom_block_count code, starts, record_count
+    int matrix_size = block_count mul block_count
+    ptr int edges = sys.alloc matrix_size
+    ptr int dom = sys.alloc matrix_size
+    ir_dom_build_edges code, starts, record_count, block_count, edges
+    ir_dom_compute edges, block_count, dom
+
+    str aliases = ''
+    str table = ''
+    str out = str.slice '', 0, 0
+    int block = 0
+    int i = 0
+    while [i lt record_count and g_fatal_error eq 0] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+        int emit = 1
+
+        if [str.eq op, 'label'] [ block = block add 1 ]
+
+        # Resolve aliases before both expression numbering and ordinary record
+        # emission so a chain of eliminated expressions remains canonical.
+        str rewritten = ir_gvn_rewrite_operands aliases, op, a, b, c, d, e
+        str rop = ir_record_field rewritten, 0
+        str ra = ir_record_field rewritten, 1
+        str rb = ir_record_field rewritten, 2
+        str rc = ir_record_field rewritten, 3
+        str rd = ir_record_field rewritten, 4
+        str re = ir_record_field rewritten, 5
+
+        if [ir_gvn_candidate rop and ir_value_is_temp ra] [
+            str expr = ir_gvn_key rop, ra, rb, rc, rd, re
+            str previous = ir_gvn_lookup_value table, expr
+            int previous_block = ir_gvn_lookup_block table, expr
+            int available = 0
+            if [not str.eq previous, '' and previous_block ge 0] [
+                if [previous_block eq block] [ available = 1 ]
+                else [
+                    if [ir_dom_dominates dom, block_count, previous_block, block] [ available = 1 ]
+                ]
+            ]
+
+            if [available] [
+                aliases = map_put aliases, ra, previous
+                emit = 0
+            ]
+            else [
+                table = ir_gvn_note table, expr, ra, block
+            ]
+            sys.free expr
+            sys.free previous
+        ]
+
+        if [emit] [ out = ir_append_owned out, rewritten ]
+
+        sys.free rewritten
+        sys.free rop
+        sys.free ra
+        sys.free rb
+        sys.free rc
+        sys.free rd
+        sys.free re
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i add 1
+    ]
+
+    sys.free starts
+    sys.free edges
+    sys.free dom
+    if [g_fatal_error] [
+        sys.free out
+        = ''
+    ]
+    = out
+]

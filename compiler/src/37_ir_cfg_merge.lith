@@ -1,0 +1,318 @@
+# Phi-safe CFG threading and block merging.
+#
+# A block B may be merged into predecessor A only when A has exactly one
+# successor, B has exactly one predecessor, and B is physically adjacent to A.
+# This makes removing B's label equivalent to preserving the existing fallthrough.
+# Phi predecessor labels on B's outgoing edges are rewritten from B to A.
+
+fn ir_cfg_block_pred_count [ptr int edges, int block_count, int block] int [
+    int count = 0
+    int pred = 0
+    while [pred lt block_count] [
+        int slot = ir_dom_slot pred, block, block_count
+        if [edges[slot]] [ count = count add 1 ]
+        pred = pred add 1
+    ]
+    = count
+]
+
+fn ir_cfg_block_succ_count [ptr int edges, int block_count, int block] int [
+    int count = 0
+    int succ = 0
+    while [succ lt block_count] [
+        int slot = ir_dom_slot block, succ, block_count
+        if [edges[slot]] [ count = count add 1 ]
+        succ = succ add 1
+    ]
+    = count
+]
+
+fn ir_cfg_block_only_successor [ptr int edges, int block_count, int block] int [
+    int found = 0 sub 1
+    int succ = 0
+    while [succ lt block_count] [
+        int slot = ir_dom_slot block, succ, block_count
+        if [edges[slot]] [
+            if [found ge 0] [ = 0 sub 1 ]
+            found = succ
+        ]
+        succ = succ add 1
+    ]
+    = found
+]
+
+fn ir_cfg_block_start_record [str code, ptr int starts, int record_count, int wanted] int [
+    if [wanted eq 0] [ = 0 ]
+    int block = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        if [str.eq op, 'label'] [
+            block = block add 1
+            if [block eq wanted] [
+                sys.free op
+                = i
+            ]
+        ]
+        sys.free op
+        i = i add 1
+    ]
+    = 0 sub 1
+]
+
+fn ir_cfg_block_end_record [str code, ptr int starts, int record_count, int wanted] int [
+    int start = ir_cfg_block_start_record code, starts, record_count, wanted
+    if [start lt 0] [ = 0 sub 1 ]
+    int i = start
+    if [wanted gt 0] [ i = i add 1 ]
+    int last = start
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        if [str.eq op, 'label'] [
+            sys.free op
+            = last
+        ]
+        last = i
+        sys.free op
+        i = i add 1
+    ]
+    = last
+]
+
+fn ir_cfg_find_merge_source [str code, ptr int starts, int record_count, ptr int edges, int block_count] int [
+    int block = 0
+    while [block lt block_count] [
+        int succs = ir_cfg_block_succ_count edges, block_count, block
+        if [succs eq 1] [
+            int target = ir_cfg_block_only_successor edges, block_count, block
+            if [target gt 0 and target ne block] [
+                int preds = ir_cfg_block_pred_count edges, block_count, target
+                int source_end = ir_cfg_block_end_record code, starts, record_count, block
+                int target_start = ir_cfg_block_start_record code, starts, record_count, target
+                int adjacent = source_end add 1
+                if [preds eq 1 and target_start eq adjacent] [ = block ]
+            ]
+        ]
+        block = block add 1
+    ]
+    = 0 sub 1
+]
+
+fn ir_cfg_rewrite_phi_pred [str payload, int count, str old_pred, str new_pred] str [
+    str out = ''
+    int i = 0
+    while [i lt count] [
+        str pair = ir_list_item payload, i
+        str value = ir_pair_left pair
+        str pred = ir_pair_right pair
+        str use_pred = pred
+        if [str.eq pred, old_pred] [ use_pred = new_pred ]
+        str next = ir_arg_pair value, use_pred
+        out = ir_append_owned out, next
+        sys.free pair
+        sys.free value
+        sys.free pred
+        sys.free next
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_cfg_merge_once [str code] str [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+    int block_count = ir_dom_block_count code, starts, record_count
+    int matrix_size = block_count mul block_count
+    ptr int edges = sys.alloc matrix_size
+    ir_dom_build_edges code, starts, record_count, block_count, edges
+
+    int source = ir_cfg_find_merge_source code, starts, record_count, edges, block_count
+    if [source lt 0] [
+        str unchanged = str.slice code, 0, str.len code
+        sys.free starts
+        sys.free edges
+        = unchanged
+    ]
+
+    int target = ir_cfg_block_only_successor edges, block_count, source
+    str source_label = ir_m2r_ssa_label_for_block code, starts, record_count, source
+    str target_label = ir_m2r_ssa_label_for_block code, starts, record_count, target
+    int source_end = ir_cfg_block_end_record code, starts, record_count, source
+    int target_start = ir_cfg_block_start_record code, starts, record_count, target
+    int target_end = ir_cfg_block_end_record code, starts, record_count, target
+
+    str aliases = ''
+    int p = target_start add 1
+    while [p le target_end] [
+        str op0 = ir_index_field code, starts, p, 0
+        if [str.eq op0, 'phi'] [
+            str a0 = ir_index_field code, starts, p, 1
+            str c0 = ir_index_field code, starts, p, 3
+            str e0 = ir_index_field code, starts, p, 5
+            int pc0 = ir_parse_count_text c0
+            if [pc0 eq 1] [
+                str pair0 = ir_list_item e0, 0
+                str value0 = ir_pair_left pair0
+                str resolved0 = ir_resolve_alias aliases, value0
+                aliases = map_put aliases, a0, resolved0
+                sys.free pair0
+                sys.free value0
+            ]
+            sys.free a0
+            sys.free c0
+            sys.free e0
+        ]
+        sys.free op0
+        p = p add 1
+    ]
+
+    int remove_source_end = 0
+    str source_end_op = ir_index_field code, starts, source_end, 0
+    if [str.eq source_end_op, 'branch'] [
+        str source_target = ir_index_field code, starts, source_end, 1
+        if [str.eq source_target, target_label] [ remove_source_end = 1 ]
+        sys.free source_target
+    ]
+    sys.free source_end_op
+
+    str out = str.slice '', 0, 0
+    int i = 0
+    while [i lt record_count and g_fatal_error eq 0] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+        int emit = 1
+
+        if [remove_source_end and i eq source_end] [ emit = 0 ]
+        if [i eq target_start] [ emit = 0 ]
+        if [i gt target_start and i le target_end and str.eq op, 'phi'] [
+            int pc = ir_parse_count_text c
+            if [pc eq 1] [ emit = 0 ]
+        ]
+
+        if [str.eq op, 'phi' and emit] [
+            int pc2 = ir_parse_count_text c
+            str rewritten_pred = ir_cfg_rewrite_phi_pred e, pc2, target_label, source_label
+            sys.free e
+            e = rewritten_pred
+        ]
+
+        if [emit] [
+            str encoded = ir_m2r_ssa_rewrite_record aliases, op, a, b, c, d, e
+            out = ir_append_owned out, encoded
+            sys.free encoded
+        ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i add 1
+    ]
+
+    sys.free starts
+    sys.free edges
+    sys.free source_label
+    sys.free target_label
+    if [g_fatal_error] [
+        sys.free out
+        = ''
+    ]
+    = out
+]
+
+fn ir_cfg_merge_blocks [str code] str [
+    str current = str.slice code, 0, str.len code
+    int record_count = ir_index_record_count code
+    int pass = 0
+    while [pass lt record_count and g_fatal_error eq 0] [
+        str next = ir_cfg_merge_once current
+        if [str.eq next, current] [
+            sys.free current
+            = next
+        ]
+        sys.free current
+        current = next
+        pass = pass add 1
+    ]
+    = current
+]
+
+# Thread branch targets through empty trampoline blocks only when the final
+# destination begins without phi nodes. This avoids introducing new predecessor
+# identities into a phi block.
+fn ir_cfg_thread_target [str code, ptr int starts, int record_count, str target] str [
+    int block = ir_dom_block_for_label code, starts, record_count, target
+    if [block le 0] [ = target ]
+    int start = ir_cfg_block_start_record code, starts, record_count, block
+    int end = ir_cfg_block_end_record code, starts, record_count, block
+    int expected_end = start add 1
+    if [start lt 0 or end lt 0 or end ne expected_end] [ = target ]
+    str op = ir_index_field code, starts, end, 0
+    if [not str.eq op, 'branch'] [
+        sys.free op
+        = target
+    ]
+    str final_target = ir_index_field code, starts, end, 1
+    int final_block = ir_dom_block_for_label code, starts, record_count, final_target
+    int final_start = ir_cfg_block_start_record code, starts, record_count, final_block
+    if [final_start lt 0] [
+        sys.free op
+        sys.free final_target
+        = target
+    ]
+    int next = final_start add 1
+    if [next lt record_count] [
+        str next_op = ir_index_field code, starts, next, 0
+        if [str.eq next_op, 'phi'] [
+            sys.free next_op
+            sys.free op
+            sys.free final_target
+            = target
+        ]
+        sys.free next_op
+    ]
+    sys.free op
+    = final_target
+]
+
+fn ir_cfg_thread_branches [str code] str [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+    str out = str.slice '', 0, 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+        if [str.eq op, 'branch'] [ a = ir_cfg_thread_target code, starts, record_count, a ]
+        if [str.eq op, 'cbranch'] [
+            b = ir_cfg_thread_target code, starts, record_count, b
+            c = ir_cfg_thread_target code, starts, record_count, c
+        ]
+        str encoded = ir_encode_record op, a, b, c, d, e
+        out = ir_append_owned out, encoded
+        sys.free encoded
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i add 1
+    ]
+    sys.free starts
+    = out
+]

@@ -1,0 +1,116 @@
+# Reusable temporary definition/use summaries for Lith IR.
+
+fn ir_ud_result_op [str op] int [
+    if [ir_is_pure_result_op op] [ = 1 ]
+    if [str.eq op, 'call' or str.eq op, 'alloc' or str.eq op, 'realloc'] [ = 1 ]
+    = 0
+]
+
+fn ir_ud_collect_defs [str code, ptr int starts, int record_count] str [
+    str defs = ''
+    int block = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        if [str.eq op, 'label'] [ block = block add 1 ]
+        if [ir_ud_result_op op] [
+            str value = ir_index_field code, starts, i, 1
+            if [ir_value_is_temp value] [
+                str block_text = int.str block
+                defs = map_put defs, value, block_text
+                sys.free block_text
+            ]
+            sys.free value
+        ]
+        sys.free op
+        i = i add 1
+    ]
+    = defs
+]
+
+fn ir_ud_note_use [str uses, str value] str [
+    if [not ir_value_is_temp value] [ = uses ]
+    str old = map_get uses, value
+    int count = 0
+    if [not str.eq old, ''] [ count = ir_parse_count_text old ]
+    count = count add 1
+    str next = int.str count
+    str out = map_put uses, value, next
+    sys.free next
+    = out
+]
+
+fn ir_ud_note_call [str uses, str payload, int count] str [
+    str out = uses
+    int i = 0
+    while [i lt count] [
+        str value = ir_arg_value payload, i
+        out = ir_ud_note_use out, value
+        sys.free value
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_ud_note_phi [str uses, str payload, int count] str [
+    str out = uses
+    int i = 0
+    while [i lt count] [
+        str pair = ir_list_item payload, i
+        str value = ir_pair_left pair
+        out = ir_ud_note_use out, value
+        sys.free pair
+        sys.free value
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_ud_collect_uses [str code, ptr int starts, int record_count] str [
+    str uses = ''
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+
+        if [str.eq op, 'load'] [ uses = ir_ud_note_use uses, c ]
+        if [str.eq op, 'store'] [ uses = ir_ud_note_use uses, b uses = ir_ud_note_use uses, c ]
+        if [str.eq op, 'array_addr' or str.eq op, 'pointer_addr'] [ uses = ir_ud_note_use uses, c uses = ir_ud_note_use uses, d ]
+        if [str.eq op, 'field_addr'] [ uses = ir_ud_note_use uses, c ]
+        if [str.eq op, 'truthy_pointer' or str.eq op, 'truthy_float' or str.eq op, 'truthy_int' or str.eq op, 'not_bool'] [ uses = ir_ud_note_use uses, b ]
+        if [str.eq op, 'bool_to_int' or str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [ uses = ir_ud_note_use uses, b ]
+        if [str.eq op, 'logic' or str.eq op, 'compare_int' or str.eq op, 'compare_bool' or str.eq op, 'compare_pointer' or str.eq op, 'compare_float' or str.eq op, 'arith_int' or str.eq op, 'arith_float'] [ uses = ir_ud_note_use uses, c uses = ir_ud_note_use uses, d ]
+        if [str.eq op, 'cbranch'] [ uses = ir_ud_note_use uses, a ]
+        if [str.eq op, 'return'] [ uses = ir_ud_note_use uses, b ]
+        if [str.eq op, 'alloc'] [ uses = ir_ud_note_use uses, c ]
+        if [str.eq op, 'realloc'] [ uses = ir_ud_note_use uses, c uses = ir_ud_note_use uses, d ]
+        if [str.eq op, 'free' or str.eq op, 'print_line'] [ uses = ir_ud_note_use uses, a ]
+        if [str.eq op, 'call'] [ uses = ir_ud_note_call uses, e, ir_parse_count_text d ]
+        if [str.eq op, 'phi'] [ uses = ir_ud_note_phi uses, e, ir_parse_count_text c ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i add 1
+    ]
+    = uses
+]
+
+fn ir_ud_def_block [str defs, str value] int [
+    str block_text = map_get defs, value
+    if [str.eq block_text, ''] [ = 0 sub 1 ]
+    = ir_parse_count_text block_text
+]
+
+fn ir_ud_use_count [str uses, str value] int [
+    str count_text = map_get uses, value
+    if [str.eq count_text, ''] [ = 0 ]
+    = ir_parse_count_text count_text
+]

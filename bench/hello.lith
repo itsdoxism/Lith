@@ -1,0 +1,4 @@
+fn main [] int [
+    io.print 'Hello, Lith!'
+    = 0
+]

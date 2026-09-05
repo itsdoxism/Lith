@@ -1,0 +1,38 @@
+{
+  "name": "lith-language",
+  "displayName": "Lith Language Support",
+  "description": "Syntax highlighting, Lith Obsidian theme, and basic editor support for the Lith programming language.",
+  "version": "0.1.0",
+  "publisher": "itsdoxism",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Themes"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "lith",
+        "aliases": ["Lith", "lith"],
+        "extensions": [".lith"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "lith",
+        "scopeName": "source.lith",
+        "path": "./syntaxes/lith.tmLanguage.json"
+      }
+    ],
+    "themes": [
+      {
+        "label": "Lith Obsidian",
+        "uiTheme": "vs-dark",
+        "path": "./themes/lith-obsidian-color-theme.json"
+      }
+    ]
+  }
+}
