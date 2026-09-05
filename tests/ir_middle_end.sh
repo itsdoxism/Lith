@@ -47,6 +47,24 @@ if grep -q ' load i32' "$LOAD_BODY"; then
 fi
 grep -q 'ret i32 9' "$LOAD_BODY"
 
+# Single-block mem2reg should promote scalar locals even when another local
+# computation separates the defining store from the later load. The final LLVM
+# body should therefore contain no stack traffic for these locals.
+PROMOTED_BODY="$BUILD/promoted_local.ll"
+sed -n '/^define i32 @promoted_local/,/^}/p' "$IR" > "$PROMOTED_BODY"
+if grep -q ' alloca ' "$PROMOTED_BODY"; then
+    echo 'single-block mem2reg left promotable alloca' >&2
+    exit 1
+fi
+if grep -q ' load ' "$PROMOTED_BODY"; then
+    echo 'single-block mem2reg left promotable load' >&2
+    exit 1
+fi
+if grep -q ' store ' "$PROMOTED_BODY"; then
+    echo 'single-block mem2reg left promotable store' >&2
+    exit 1
+fi
+
 # CFG v1 is label-name agnostic: after the constant cbranch becomes an
 # unconditional branch, the ordinary if.else block is unreachable and must be
 # removed even though it is not a compiler-generated dead.* block.
@@ -87,6 +105,10 @@ grep -q 'ir_validate_function current' compiler/src/25_ir.lith
 grep -q 'ir_validate_function next' compiler/src/25_ir.lith
 grep -q 'ir_cfg_prune_unreachable next' compiler/src/25_ir.lith
 grep -q 'ir_validate_function cfg' compiler/src/25_ir.lith
+grep -q 'ir_mem2reg_single_block cfg' compiler/src/25_ir.lith
+grep -q 'ir_validate_function promoted' compiler/src/25_ir.lith
+grep -q 'ir_optimize_function_v2 promoted' compiler/src/25_ir.lith
+grep -q 'ir_validate_function cleaned' compiler/src/25_ir.lith
 grep -q 'ir_run_optimization_pipeline raw' compiler/src/25_ir.lith
 grep -q 'ir_index_record_count' compiler/src/27_ir_index.lith
 grep -q 'ir_index_fill' compiler/src/27_ir_index.lith
@@ -103,5 +125,8 @@ grep -q 'fn ir_cfg_prune_unreachable' compiler/src/28_ir_cfg.lith
 grep -q 'fn ir_dom_compute' compiler/src/29_ir_dom.lith
 grep -q 'fn ir_ud_collect_defs' compiler/src/29_ir_use_def.lith
 grep -q 'fn ir_ud_collect_uses' compiler/src/29_ir_use_def.lith
+grep -q 'fn ir_m2r_collect_slots' compiler/src/30_ir_mem2reg.lith
+grep -q 'fn ir_m2r_collect_unsafe' compiler/src/30_ir_mem2reg.lith
+grep -q 'fn ir_mem2reg_single_block' compiler/src/30_ir_mem2reg.lith
 
-echo 'Lith IR validator + verified optimizer/CFG pipeline: passed'
+echo 'Lith IR validator + verified optimizer/CFG/mem2reg pipeline: passed'
