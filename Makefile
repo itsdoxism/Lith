@@ -21,6 +21,7 @@ SELF_MODULES := \
 	compiler/src/29_ir_dom.lith \
 	compiler/src/29_ir_dom_tree.lith \
 	compiler/src/29_ir_use_def.lith \
+	compiler/src/29_ir_ssa_validate.lith \
 	compiler/src/30_ir_mem2reg.lith \
 	compiler/src/31_ir_mem2reg_ssa.lith \
 	compiler/src/32_ir_mem2reg_multi.lith \
