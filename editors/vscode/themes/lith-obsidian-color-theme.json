@@ -1,0 +1,70 @@
+{
+  "$schema": "vscode://schemas/color-theme",
+  "name": "Lith Obsidian",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#0B0D10",
+    "editor.foreground": "#D7DCE2",
+    "editorCursor.foreground": "#D7DCE2",
+    "editorLineNumber.foreground": "#4E5661",
+    "editorLineNumber.activeForeground": "#9AA4B2",
+    "editor.selectionBackground": "#273244",
+    "editor.inactiveSelectionBackground": "#1B2430",
+    "editor.lineHighlightBackground": "#10141A",
+    "editorIndentGuide.background1": "#1B222B",
+    "editorIndentGuide.activeBackground1": "#384454",
+    "editorBracketMatch.background": "#18212B",
+    "editorBracketMatch.border": "#89DDFF",
+    "editorWhitespace.foreground": "#242B34"
+  },
+  "tokenColors": [
+    {
+      "scope": ["comment", "punctuation.definition.comment"],
+      "settings": { "foreground": "#5C6370", "fontStyle": "italic" }
+    },
+    {
+      "scope": ["keyword", "keyword.control", "storage.modifier"],
+      "settings": { "foreground": "#C792EA" }
+    },
+    {
+      "scope": ["storage.type", "support.type", "entity.name.type", "entity.name.type.struct"],
+      "settings": { "foreground": "#82AAFF" }
+    },
+    {
+      "scope": ["entity.name.function", "support.function"],
+      "settings": { "foreground": "#7FDBCA" }
+    },
+    {
+      "scope": ["string", "string.quoted.single"],
+      "settings": { "foreground": "#ECC48D" }
+    },
+    {
+      "scope": ["constant.numeric"],
+      "settings": { "foreground": "#F78C6C" }
+    },
+    {
+      "scope": ["constant.language", "constant.other"],
+      "settings": { "foreground": "#FF5370" }
+    },
+    {
+      "scope": ["keyword.operator", "punctuation.accessor"],
+      "settings": { "foreground": "#89DDFF" }
+    },
+    {
+      "scope": ["support.namespace", "entity.name.namespace", "support.class"],
+      "settings": { "foreground": "#FFCB6B" }
+    },
+    {
+      "scope": ["variable.parameter"],
+      "settings": { "foreground": "#D6DEEB" }
+    },
+    {
+      "scope": ["variable", "identifier"],
+      "settings": { "foreground": "#D7DCE2" }
+    },
+    {
+      "scope": ["invalid", "invalid.illegal"],
+      "settings": { "foreground": "#0B0D10", "background": "#FF5370" }
+    }
+  ]
+}
