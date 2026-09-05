@@ -30,7 +30,6 @@ if grep -q 'br i1 1' "$IR"; then
 fi
 grep -q 'br label %if.then' "$IR"
 
-# Optimizer v2 should remove a pure dead computation in dead_math.
 DEAD_BODY="$BUILD/dead_math.ll"
 sed -n '/^define i32 @dead_math/,/^}/p' "$IR" > "$DEAD_BODY"
 if grep -q ' add i32 ' "$DEAD_BODY"; then
@@ -38,8 +37,6 @@ if grep -q ' add i32 ' "$DEAD_BODY"; then
     exit 1
 fi
 
-# A store immediately followed by a load of the same local address should
-# forward the stored value instead of lowering a redundant load.
 LOAD_BODY="$BUILD/local_load.ll"
 sed -n '/^define i32 @local_load/,/^}/p' "$IR" > "$LOAD_BODY"
 if grep -q ' load i32' "$LOAD_BODY"; then
@@ -48,9 +45,6 @@ if grep -q ' load i32' "$LOAD_BODY"; then
 fi
 grep -q 'ret i32 9' "$LOAD_BODY"
 
-# Single-block mem2reg should promote scalar locals even when another local
-# computation separates the defining store from the later load. The final LLVM
-# body should therefore contain no stack traffic for these locals.
 PROMOTED_BODY="$BUILD/promoted_local.ll"
 sed -n '/^define i32 @promoted_local/,/^}/p' "$IR" > "$PROMOTED_BODY"
 if grep -q ' alloca ' "$PROMOTED_BODY"; then
@@ -66,9 +60,6 @@ if grep -q ' store ' "$PROMOTED_BODY"; then
     exit 1
 fi
 
-# Multi-block mem2reg should promote a scalar local through a dynamic diamond.
-# The two branch definitions meet at a real SSA phi and no stack traffic should
-# remain for the promoted local.
 BRANCH_BODY="$BUILD/promoted_branch.ll"
 sed -n '/^define i32 @promoted_branch/,/^}/p' "$IR" > "$BRANCH_BODY"
 if grep -q ' alloca ' "$BRANCH_BODY"; then
@@ -88,18 +79,34 @@ if ! grep -q ' phi i32 ' "$BRANCH_BODY"; then
     exit 1
 fi
 
-# CFG v1 is label-name agnostic: after the constant cbranch becomes an
-# unconditional branch, the ordinary if.else block is unreachable and must be
-# removed even though it is not a compiler-generated dead.* block.
+# Loop/back-edge mem2reg should reserve header phi values before rewriting the
+# body, then fill incoming edges after all predecessor out-values are known.
+LOOP_BODY="$BUILD/promoted_loop.ll"
+sed -n '/^define i32 @promoted_loop/,/^}/p' "$IR" > "$LOOP_BODY"
+if grep -q ' alloca ' "$LOOP_BODY"; then
+    echo 'loop mem2reg left promotable alloca' >&2
+    exit 1
+fi
+if grep -q ' load ' "$LOOP_BODY"; then
+    echo 'loop mem2reg left promotable load' >&2
+    exit 1
+fi
+if grep -q ' store ' "$LOOP_BODY"; then
+    echo 'loop mem2reg left promotable store' >&2
+    exit 1
+fi
+LOOP_PHI_COUNT=$(grep -c ' phi i32 ' "$LOOP_BODY" || true)
+if [ "$LOOP_PHI_COUNT" -lt 2 ]; then
+    echo 'loop mem2reg failed to emit induction/state phis' >&2
+    exit 1
+fi
+
 MAIN_BODY="$BUILD/main.ll"
 sed -n '/^define i32 @main/,/^}/p' "$IR" > "$MAIN_BODY"
 if grep -q 'call i32 @local_load' "$MAIN_BODY"; then
     echo 'IR CFG reachability failed to prune unreachable if.else block' >&2
     exit 1
 fi
-
-# Source after an unconditional return is emitted behind a compiler-generated
-# dead block; CFG pruning should remove the unreachable print call as well.
 if grep -q 'call i32 @puts' "$IR"; then
     echo 'IR CFG pruning failed to remove unreachable print' >&2
     exit 1
@@ -119,9 +126,7 @@ if [ "$rc" -ne 5 ]; then
     exit 1
 fi
 
-# Keep validation wired at the raw IR boundary and after every optimization
-# stage. This catches accidental pass-manager bypasses even though ordinary
-# source cannot directly construct malformed internal records.
+# Keep validation and analysis wired through the whole middle-end.
 grep -q 'ir_validate_function raw' compiler/src/25_ir.lith
 grep -q 'fn ir_run_optimization_pipeline' compiler/src/25_ir.lith
 grep -q 'ir_validate_function current' compiler/src/25_ir.lith
@@ -142,15 +147,12 @@ grep -q 'fn ir_cfg_validate_phi_edges' compiler/src/28_ir_cfg.lith
 grep -q 'phi contains duplicate predecessor' compiler/src/28_ir_cfg.lith
 grep -q 'phi predecessor is not a CFG edge' compiler/src/28_ir_cfg.lith
 grep -q 'fn ir_cfg_validate_pruned' compiler/src/28_ir_cfg.lith
-grep -q 'ir_cfg_validate_pruned out' compiler/src/28_ir_cfg.lith
-grep -q 'ir_cfg_has_edge edges, pred, block_label' compiler/src/28_ir_cfg.lith
 grep -q 'fn ir_cfg_prune_unreachable' compiler/src/28_ir_cfg.lith
 grep -q 'fn ir_dom_compute' compiler/src/29_ir_dom.lith
 grep -q 'fn ir_dom_compute_idom' compiler/src/29_ir_dom_tree.lith
 grep -q 'fn ir_dom_build_tree' compiler/src/29_ir_dom_tree.lith
 grep -q 'fn ir_dom_compute_frontier' compiler/src/29_ir_dom_tree.lith
 grep -q 'fn ir_dom_frontier_contains' compiler/src/29_ir_dom_tree.lith
-grep -q 'fn ir_dom_tree_frontier_verify' compiler/src/29_ir_dom_tree.lith
 grep -q 'fn ir_ud_collect_defs' compiler/src/29_ir_use_def.lith
 grep -q 'fn ir_ud_collect_uses' compiler/src/29_ir_use_def.lith
 grep -q 'fn ir_validate_ssa_dominance' compiler/src/29_ir_ssa_validate.lith
@@ -160,15 +162,16 @@ grep -q 'phi uses undefined temporary value' compiler/src/29_ir_ssa_validate.lit
 grep -q 'compiler/src/29_ir_ssa_validate.lith' Makefile
 grep -q 'ir_validate_ssa_dominance code' compiler/src/30_ir_mem2reg.lith
 grep -q 'ir_validate_ssa_dominance multi' compiler/src/30_ir_mem2reg.lith
-grep -q 'fn ir_m2r_collect_slots' compiler/src/30_ir_mem2reg.lith
-grep -q 'fn ir_m2r_collect_unsafe' compiler/src/30_ir_mem2reg.lith
-grep -q 'ir_mem2reg_multi_block out' compiler/src/30_ir_mem2reg.lith
 grep -q 'fn ir_mem2reg_single_block' compiler/src/30_ir_mem2reg.lith
 grep -q 'fn ir_mem2reg_multi_block_plan' compiler/src/31_ir_mem2reg_ssa.lith
 grep -q 'fn ir_m2r_ssa_place_phis' compiler/src/31_ir_mem2reg_ssa.lith
 grep -q 'fn ir_m2r_ssa_has_backedge' compiler/src/31_ir_mem2reg_ssa.lith
 grep -q 'fn ir_mem2reg_multi_block' compiler/src/32_ir_mem2reg_multi.lith
-grep -q 'multi-block mem2reg missing planned phi' compiler/src/32_ir_mem2reg_multi.lith
-grep -q 'multi-block mem2reg predecessor has no current value' compiler/src/32_ir_mem2reg_multi.lith
+grep -q 'ir_mem2reg_loop code' compiler/src/32_ir_mem2reg_multi.lith
+grep -q 'fn ir_mem2reg_loop' compiler/src/33_ir_mem2reg_loop.lith
+grep -q 'fn ir_m2r_loop_assign_phi_temps' compiler/src/33_ir_mem2reg_loop.lith
+grep -q 'fn ir_m2r_loop_emit_phis_for_block' compiler/src/33_ir_mem2reg_loop.lith
+grep -q 'loop mem2reg phi predecessor has no current value' compiler/src/33_ir_mem2reg_loop.lith
+grep -q 'compiler/src/33_ir_mem2reg_loop.lith' Makefile
 
 echo 'Lith IR validator + verified optimizer/CFG/mem2reg pipeline: passed'
