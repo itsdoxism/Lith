@@ -1,0 +1,129 @@
+name: Bootstrap trusted Lith seed
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap-seed:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out Lith
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang python3
+
+      - name: Assemble current compiler source
+        run: |
+          mkdir -p build/bootstrap-history
+          cat \
+            compiler/src/00_state_types.lith \
+            compiler/src/05_modules.lith \
+            compiler/src/10_lexer.lith \
+            compiler/src/20_symbols.lith \
+            compiler/src/25_ir.lith \
+            compiler/src/26_ir_validate.lith \
+            compiler/src/27_ir_index.lith \
+            compiler/src/27_ir_optimize.lith \
+            compiler/src/28_ir_cfg.lith \
+            compiler/src/29_ir_dom.lith \
+            compiler/src/29_ir_dom_tree.lith \
+            compiler/src/29_ir_use_def.lith \
+            compiler/src/29_ir_ssa_validate.lith \
+            compiler/src/30_ir_mem2reg.lith \
+            compiler/src/31_ir_mem2reg_ssa.lith \
+            compiler/src/32_ir_mem2reg_multi.lith \
+            compiler/src/33_ir_mem2reg_loop.lith \
+            compiler/src/34_ir_sccp.lith \
+            compiler/src/35_ir_sccp_edges.lith \
+            compiler/src/36_ir_cfg_simplify.lith \
+            compiler/src/37_ir_cfg_merge.lith \
+            compiler/src/38_ir_gvn.lith \
+            compiler/src/39_ir_licm.lith \
+            compiler/src/backend/llvm/25_core.lith \
+            compiler/src/backend/llvm/26_ops.lith \
+            compiler/src/backend/llvm/27_lower.lith \
+            compiler/src/backend/llvm/28_module.lith \
+            compiler/src/30_operators.lith \
+            compiler/src/30_core_values.lith \
+            compiler/src/31_expressions.lith \
+            compiler/src/40_memory_arrays.lith \
+            compiler/src/50_match_print.lith \
+            compiler/src/60_statements.lith \
+            compiler/src/70_scanner.lith \
+            compiler/src/75_global_constants.lith \
+            compiler/src/80_emitter_main.lith \
+            > build/lithc.lith
+
+      - name: Recover pinned historical bootstrap
+        env:
+          BOOTSTRAP_COMMIT: 87f1bb19deb8f60f2d16dac0d1f68b0da23fcb37
+        run: |
+          git show "$BOOTSTRAP_COMMIT:compiler/lunac_llvm.py" > build/bootstrap-history/lunac_llvm.py
+          git show "$BOOTSTRAP_COMMIT:compiler/lith_bootstrap_llvm.py" > build/bootstrap-history/lith_bootstrap_llvm.py
+
+      - name: Build initial native compiler
+        run: |
+          python3 build/bootstrap-history/lith_bootstrap_llvm.py \
+            build/lithc.lith build/lithc-stage1.ll
+
+          clang -Wno-override-module -O2 \
+            build/lithc-stage1.ll runtime/luna_runtime.ll \
+            -o build/lithc-stage1
+
+          build/lithc-stage1 build/lithc.lith build/lithc-stage2.ll
+
+          clang -Wno-override-module -O2 \
+            build/lithc-stage2.ll runtime/luna_runtime.ll \
+            -o build/lithc
+
+      - name: Verify self-host equality
+        run: |
+          build/lithc build/lithc.lith build/lithc-stage3.ll
+          cmp build/lithc-stage2.ll build/lithc-stage3.ll
+
+          build/lithc build/lithc.lith build/lithc-stage4.ll
+          cmp build/lithc-stage3.ll build/lithc-stage4.ll
+
+          echo 'Lith self-host equality: stage2 == stage3 == stage4'
+
+      - name: Export candidate trusted seed
+        env:
+          BOOTSTRAP_COMMIT: 87f1bb19deb8f60f2d16dac0d1f68b0da23fcb37
+        run: |
+          mkdir -p bootstrap/seed
+          cp build/lithc bootstrap/seed/lithc-linux-x86_64
+          chmod +x bootstrap/seed/lithc-linux-x86_64
+
+          {
+            echo 'Lith trusted seed'
+            echo 'platform=linux-x86_64'
+            echo 'verification=stage2==stage3==stage4 byte-for-byte'
+            echo 'source=build/lithc'
+            echo "source_commit=$GITHUB_SHA"
+            echo "historical_bootstrap_commit=$BOOTSTRAP_COMMIT"
+            echo "sha256=$(sha256sum bootstrap/seed/lithc-linux-x86_64 | cut -d' ' -f1)"
+          } > bootstrap/seed/manifest.txt
+
+      - name: Verify clean seed build
+        run: |
+          rm -rf build
+          make compiler
+          make test
+
+      - name: Upload verified seed candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: lith-trusted-seed-linux-x86_64
+          path: |
+            bootstrap/seed/lithc-linux-x86_64
+            bootstrap/seed/manifest.txt
+          if-no-files-found: error
