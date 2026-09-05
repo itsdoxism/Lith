@@ -2,6 +2,15 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+NATIVE_DRIVER="$ROOT/build/lith-driver"
+
+# Normal operation is handled by the Lith-native driver. The shell path below
+# exists only to bootstrap that driver from a clean checkout.
+if [ -x "$NATIVE_DRIVER" ]; then
+  cd "$ROOT"
+  exec "$NATIVE_DRIVER" "$@"
+fi
+
 CLANG=${CLANG:-clang}
 RUNTIME="$ROOT/runtime/luna_runtime.ll"
 BYTES_RUNTIME="$ROOT/runtime/lith_bytes.ll"
