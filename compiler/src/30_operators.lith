@@ -118,6 +118,7 @@ fn builtin_argc [str name] int [
 ]
 
 fn call_argc_text [str name] str [
+    if [str.eq name, 'fs.cwd'] [ = '0' ]
     int builtin = builtin_argc name
     if [builtin gt 0] [ = int.str builtin ]
     = map_get g_fn_argc, name
