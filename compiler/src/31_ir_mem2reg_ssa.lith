@@ -1,0 +1,294 @@
+# Multi-block mem2reg SSA planning for acyclic CFGs.
+#
+# The current IR validator requires phi incoming temporaries to be defined
+# earlier in serialized order, so this first multi-block stage deliberately
+# excludes CFGs containing back-edges. It computes safe scalar-slot candidates,
+# store definition blocks, and iterated dominance-frontier phi placement. A
+# later rename/emission step can consume the same plan without changing the
+# candidate rules.
+
+fn ir_m2r_ssa_key [str slot, int block] str [
+    str prefix = str.concat slot, '@'
+    str block_text = int.str block
+    str key = str.concat prefix, block_text
+    sys.free prefix
+    sys.free block_text
+    = key
+]
+
+fn ir_m2r_ssa_mark [str table, str slot, int block] str [
+    str key = ir_m2r_ssa_key slot, block
+    str out = map_put table, key, '1'
+    sys.free key
+    = out
+]
+
+fn ir_m2r_ssa_has [str table, str slot, int block] int [
+    str key = ir_m2r_ssa_key slot, block
+    str known = map_get table, key
+    int yes = str.eq known, '1'
+    sys.free key
+    sys.free known
+    = yes
+]
+
+# Any edge from a later/equal serialized block to an earlier/equal block is a
+# back-edge for this conservative first SSA stage. Such functions remain on the
+# single-block/stack path until dominance-aware phi validation lands.
+fn ir_m2r_ssa_has_backedge [ptr int edges, int block_count] int [
+    int from = 0
+    while [from lt block_count] [
+        int to = 0
+        while [to lt block_count] [
+            int edge_slot = ir_dom_slot from, to, block_count
+            if [edges[edge_slot]] [
+                if [to le from] [ = 1 ]
+            ]
+            to = to add 1
+        ]
+        from = from add 1
+    ]
+    = 0
+]
+
+# Multi-block promotion starts only with scalar stack slots allocated in entry.
+# This gives every candidate one dominating allocation point and avoids moving
+# allocation semantics while SSA construction is still being hardened.
+fn ir_m2r_ssa_collect_entry_slots [str code, ptr int starts, int record_count] str [
+    str slots = ''
+    int block = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        if [str.eq op, 'label'] [ block = block add 1 ]
+        if [block eq 0 and str.eq op, 'stack_alloc'] [
+            if [not is_aggregate_type b] [ slots = map_put slots, a, b ]
+        ]
+        sys.free op
+        sys.free a
+        sys.free b
+        i = i add 1
+    ]
+    = slots
+]
+
+fn ir_m2r_ssa_is_slot [str slots, str value] int [
+    if [not ir_value_is_temp value] [ = 0 ]
+    str typ = map_get slots, value
+    = not str.eq typ, ''
+]
+
+fn ir_m2r_ssa_mark_if_slot [str slots, str unsafe, str value] str [
+    if [ir_m2r_ssa_is_slot slots, value] [ = map_put unsafe, value, '1' ]
+    = unsafe
+]
+
+fn ir_m2r_ssa_mark_call_escapes [str slots, str unsafe, str payload, int count] str [
+    str out = unsafe
+    int i = 0
+    while [i lt count] [
+        str value = ir_arg_value payload, i
+        out = ir_m2r_ssa_mark_if_slot slots, out, value
+        sys.free value
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_m2r_ssa_mark_phi_escapes [str slots, str unsafe, str payload, int count] str [
+    str out = unsafe
+    int i = 0
+    while [i lt count] [
+        str pair = ir_list_item payload, i
+        str value = ir_pair_left pair
+        out = ir_m2r_ssa_mark_if_slot slots, out, value
+        sys.free pair
+        sys.free value
+        i = i add 1
+    ]
+    = out
+]
+
+# Address escape analysis for entry scalar slots. Exact load/store address use is
+# allowed in any forward block. Every other appearance of the slot value makes
+# it unsafe for multi-block promotion.
+fn ir_m2r_ssa_collect_unsafe [str code, ptr int starts, int record_count, str slots] str [
+    str unsafe = ''
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+
+        if [str.eq op, 'store'] [
+            unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, b
+        ]
+        if [str.eq op, 'array_addr' or str.eq op, 'pointer_addr'] [
+            unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, c
+            unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, d
+        ]
+        if [str.eq op, 'field_addr'] [ unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, c ]
+        if [str.eq op, 'truthy_pointer' or str.eq op, 'truthy_float' or str.eq op, 'truthy_int' or str.eq op, 'not_bool'] [
+            unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, b
+        ]
+        if [str.eq op, 'bool_to_int' or str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [
+            unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, b
+        ]
+        if [str.eq op, 'logic' or str.eq op, 'compare_int' or str.eq op, 'compare_bool' or str.eq op, 'compare_pointer' or str.eq op, 'compare_float' or str.eq op, 'arith_int' or str.eq op, 'arith_float'] [
+            unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, c
+            unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, d
+        ]
+        if [str.eq op, 'cbranch'] [ unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, a ]
+        if [str.eq op, 'return'] [ unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, b ]
+        if [str.eq op, 'alloc'] [ unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, c ]
+        if [str.eq op, 'realloc'] [
+            unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, c
+            unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, d
+        ]
+        if [str.eq op, 'free' or str.eq op, 'print_line'] [ unsafe = ir_m2r_ssa_mark_if_slot slots, unsafe, a ]
+        if [str.eq op, 'call'] [
+            int argc = ir_parse_count_text d
+            unsafe = ir_m2r_ssa_mark_call_escapes slots, unsafe, e, argc
+        ]
+        if [str.eq op, 'phi'] [
+            int pc = ir_parse_count_text c
+            unsafe = ir_m2r_ssa_mark_phi_escapes slots, unsafe, e, pc
+        ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i add 1
+    ]
+    = unsafe
+]
+
+fn ir_m2r_ssa_promotable [str slots, str unsafe, str slot] int [
+    if [not ir_m2r_ssa_is_slot slots, slot] [ = 0 ]
+    str bad = map_get unsafe, slot
+    = str.eq bad, ''
+]
+
+# Collect one bit per (slot, block) that contains a store definition.
+fn ir_m2r_ssa_collect_def_blocks [str code, ptr int starts, int record_count, str slots, str unsafe] str [
+    str defs = ''
+    int block = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        if [str.eq op, 'label'] [ block = block add 1 ]
+        if [str.eq op, 'store'] [
+            if [ir_m2r_ssa_promotable slots, unsafe, c] [
+                defs = ir_m2r_ssa_mark defs, c, block
+            ]
+        ]
+        sys.free op
+        sys.free b
+        sys.free c
+        i = i add 1
+    ]
+    = defs
+]
+
+# Iterated dominance frontier placement. `work` begins with store-definition
+# blocks. Newly placed phi blocks are fed back into the work set so transitive
+# join points are discovered without requiring a mutable queue structure.
+fn ir_m2r_ssa_place_phi_for_slot [str defs, str placed, str slot, ptr int frontier, int block_count] str [
+    str work = ''
+    int block = 0
+    while [block lt block_count] [
+        if [ir_m2r_ssa_has defs, slot, block] [ work = ir_m2r_ssa_mark work, slot, block ]
+        block = block add 1
+    ]
+
+    int pass = 0
+    while [pass lt block_count] [
+        int x = 0
+        while [x lt block_count] [
+            if [ir_m2r_ssa_has work, slot, x] [
+                int y = 0
+                while [y lt block_count] [
+                    if [ir_dom_frontier_contains frontier, block_count, x, y] [
+                        if [not ir_m2r_ssa_has placed, slot, y] [
+                            placed = ir_m2r_ssa_mark placed, slot, y
+                            if [not ir_m2r_ssa_has defs, slot, y] [
+                                work = ir_m2r_ssa_mark work, slot, y
+                            ]
+                        ]
+                    ]
+                    y = y add 1
+                ]
+            ]
+            x = x add 1
+        ]
+        pass = pass add 1
+    ]
+    = placed
+]
+
+# Walk candidate stack_alloc records and compute all required phi blocks.
+fn ir_m2r_ssa_place_phis [str code, ptr int starts, int record_count, str slots, str unsafe, str defs, ptr int frontier, int block_count] str [
+    str placed = ''
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        if [str.eq op, 'stack_alloc'] [
+            if [ir_m2r_ssa_promotable slots, unsafe, a] [
+                placed = ir_m2r_ssa_place_phi_for_slot defs, placed, a, frontier, block_count
+            ]
+        ]
+        sys.free op
+        sys.free a
+        i = i add 1
+    ]
+    = placed
+]
+
+# Analysis-only entry point used by tests and the upcoming SSA rename pass. It
+# returns an empty plan when the function contains a back-edge; that is an
+# intentional conservative fallback, not a compilation failure.
+fn ir_mem2reg_multi_block_plan [str code] str [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+
+    int block_count = ir_dom_block_count code, starts, record_count
+    int matrix_size = block_count mul block_count
+    ptr int edges = sys.alloc matrix_size
+    ptr int dom = sys.alloc matrix_size
+    ptr int frontier = sys.alloc matrix_size
+    ir_dom_build_edges code, starts, record_count, block_count, edges
+
+    if [ir_m2r_ssa_has_backedge edges, block_count] [
+        sys.free starts
+        sys.free edges
+        sys.free dom
+        sys.free frontier
+        = ''
+    ]
+
+    ir_dom_compute edges, block_count, dom
+    ir_dom_compute_frontier edges, dom, block_count, frontier
+    str slots = ir_m2r_ssa_collect_entry_slots code, starts, record_count
+    str unsafe = ir_m2r_ssa_collect_unsafe code, starts, record_count, slots
+    str defs = ir_m2r_ssa_collect_def_blocks code, starts, record_count, slots, unsafe
+    str placed = ir_m2r_ssa_place_phis code, starts, record_count, slots, unsafe, defs, frontier, block_count
+
+    sys.free starts
+    sys.free edges
+    sys.free dom
+    sys.free frontier
+    = placed
+]
