@@ -1,10 +1,12 @@
 # Conservative CFG simplification after SCCP.
 #
-# This first stage intentionally avoids predecessor-rewriting block merges.
-# It removes only transformations that preserve the same logical CFG edge:
+# The local cleanup stage removes transformations that preserve the same
+# logical CFG edge, then chains phi-safe branch threading and block merging:
 #   * cbranch X, L, L -> branch L
 #   * branch L immediately followed by label L -> fallthrough
 #   * single-input phi -> value alias
+#   * empty trampoline branch threading when the destination has no phi
+#   * single-predecessor block merging with outgoing phi predecessor rewrite
 
 fn ir_cfg_simplify_collect_phi_aliases [str code, ptr int starts, int record_count] str [
     str aliases = ''
@@ -104,5 +106,12 @@ fn ir_cfg_simplify [str code] str [
         sys.free out
         = ''
     ]
-    = out
+
+    str threaded = ir_cfg_thread_branches out
+    sys.free out
+    if [str.eq threaded, ''] [ = '' ]
+
+    str merged = ir_cfg_merge_blocks threaded
+    sys.free threaded
+    = merged
 ]
