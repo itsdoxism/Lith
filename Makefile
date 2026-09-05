@@ -48,8 +48,9 @@ SELF_MODULES := \
 SELF_SRC := $(BUILD)/lithc.lith
 SELF_LITHC := $(BUILD)/lithc
 LITH_DRIVER := $(BUILD)/lith-driver
+LITH_BUILD := $(BUILD)/lith-build
 
-.PHONY: all compiler driver-check native-surfaces-check semantic-check core-check backend-boundary-check ir-middle-end-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
+.PHONY: all compiler native-rebuild driver-check native-surfaces-check semantic-check core-check backend-boundary-check ir-middle-end-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
 
 all: compiler
 
@@ -74,10 +75,19 @@ $(SELF_LITHC): $(BUILD)/lithc-stage2.ll $(LLVM_RUNTIME)
 $(LITH_DRIVER): tools/lith_driver.lith $(SELF_LITHC)
 	sh bin/lith tools/lith_driver.lith -o $@
 
-compiler: $(SELF_LITHC) $(LITH_DRIVER)
-	chmod +x bin/lith bin/lithc bin/luna bin/lunac $(LITH_DRIVER) 2>/dev/null || true
+$(LITH_BUILD): tools/lith_build.lith $(SELF_LITHC) $(LITH_DRIVER)
+	bin/lith tools/lith_build.lith -o $@
+
+compiler: $(SELF_LITHC) $(LITH_DRIVER) $(LITH_BUILD)
+	chmod +x bin/lith bin/lithc bin/luna bin/lunac $(LITH_DRIVER) $(LITH_BUILD) 2>/dev/null || true
 	@echo 'Self-hosted Lith compiler: $(SELF_LITHC)'
 	@echo 'Lith-native driver: $(LITH_DRIVER)'
+	@echo 'Lith-native build orchestrator: $(LITH_BUILD)'
+
+# Rebuild compiler + driver through Lith itself. The current self-hosted compiler
+# is the trusted seed, so this path does not invoke the Python bootstrap.
+native-rebuild: compiler
+	LITH_SEED=$(SELF_LITHC) CLANG=$(CLANG) PYTHON=$(PYTHON) $(LITH_BUILD)
 
 $(BUILD)/reference.c: examples/reference.lith $(BOOTSTRAP_C) $(RUNTIME_H) | $(BUILD)
 	$(PYTHON) $(BOOTSTRAP_C) $< $@
