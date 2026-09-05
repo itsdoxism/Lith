@@ -258,5 +258,10 @@ fn ir_mem2reg_single_block [str code] str [
         sys.free out
         = ''
     ]
-    = out
+
+    # Chain the conservative forward-CFG SSA stage. Back-edge functions are
+    # returned unchanged by that stage, so loop behavior remains untouched.
+    str multi = ir_mem2reg_multi_block out
+    sys.free out
+    = multi
 ]
