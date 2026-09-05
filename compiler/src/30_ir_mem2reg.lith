@@ -25,8 +25,10 @@ fn ir_m2r_is_unsafe [str unsafe, str value] int [
 ]
 
 fn ir_m2r_is_promotable [str slots, str unsafe, str value] int [
-    if [ir_m2r_slot_block slots, value lt 0] [ = 0 ]
-    = not ir_m2r_is_unsafe unsafe, value
+    int block = ir_m2r_slot_block slots, value
+    if [block lt 0] [ = 0 ]
+    int bad = ir_m2r_is_unsafe unsafe, value
+    = not bad
 ]
 
 fn ir_m2r_collect_slots [str code, ptr int starts, int record_count] str [
@@ -131,8 +133,14 @@ fn ir_m2r_collect_unsafe [str code, ptr int starts, int record_count, str slots]
             unsafe = ir_m2r_mark_unsafe slots, unsafe, d, block, 0
         ]
         if [str.eq op, 'free' or str.eq op, 'print_line'] [ unsafe = ir_m2r_mark_unsafe slots, unsafe, a, block, 0 ]
-        if [str.eq op, 'call'] [ unsafe = ir_m2r_mark_call_unsafe slots, unsafe, e, ir_parse_count_text d, block ]
-        if [str.eq op, 'phi'] [ unsafe = ir_m2r_mark_phi_unsafe slots, unsafe, e, ir_parse_count_text c, block ]
+        if [str.eq op, 'call'] [
+            int argc = ir_parse_count_text d
+            unsafe = ir_m2r_mark_call_unsafe slots, unsafe, e, argc, block
+        ]
+        if [str.eq op, 'phi'] [
+            int pc = ir_parse_count_text c
+            unsafe = ir_m2r_mark_phi_unsafe slots, unsafe, e, pc, block
+        ]
 
         sys.free op
         sys.free a
@@ -222,12 +230,12 @@ fn ir_mem2reg_single_block [str code] str [
         ]
         if [str.eq op, 'free' or str.eq op, 'print_line'] [ a = ir_resolve_alias aliases, a ]
         if [str.eq op, 'call'] [
-            int argc = ir_parse_count_text d
-            e = ir_m2r_rewrite_args aliases, e, argc
+            int argc2 = ir_parse_count_text d
+            e = ir_m2r_rewrite_args aliases, e, argc2
         ]
         if [str.eq op, 'phi'] [
-            int pc = ir_parse_count_text c
-            e = ir_m2r_rewrite_phi aliases, e, pc
+            int pc2 = ir_parse_count_text c
+            e = ir_m2r_rewrite_phi aliases, e, pc2
         ]
 
         if [emit and g_fatal_error eq 0] [
