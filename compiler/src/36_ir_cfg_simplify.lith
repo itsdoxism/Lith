@@ -1,0 +1,108 @@
+# Conservative CFG simplification after SCCP.
+#
+# This first stage intentionally avoids predecessor-rewriting block merges.
+# It removes only transformations that preserve the same logical CFG edge:
+#   * cbranch X, L, L -> branch L
+#   * branch L immediately followed by label L -> fallthrough
+#   * single-input phi -> value alias
+
+fn ir_cfg_simplify_collect_phi_aliases [str code, ptr int starts, int record_count] str [
+    str aliases = ''
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        if [str.eq op, 'phi'] [
+            str a = ir_index_field code, starts, i, 1
+            str c = ir_index_field code, starts, i, 3
+            str e = ir_index_field code, starts, i, 5
+            int count = ir_parse_count_text c
+            if [count eq 1] [
+                str pair = ir_list_item e, 0
+                str value = ir_pair_left pair
+                str resolved = ir_resolve_alias aliases, value
+                aliases = map_put aliases, a, resolved
+                sys.free pair
+                sys.free value
+            ]
+            sys.free a
+            sys.free c
+            sys.free e
+        ]
+        sys.free op
+        i = i add 1
+    ]
+    = aliases
+]
+
+fn ir_cfg_simplify_is_single_phi [str op, str count_text] int [
+    if [not str.eq op, 'phi'] [ = 0 ]
+    = ir_parse_count_text count_text eq 1
+]
+
+fn ir_cfg_simplify_branch_to_next [str code, ptr int starts, int record_count, int index, str target] int [
+    int next = index add 1
+    if [next ge record_count] [ = 0 ]
+    str next_op = ir_index_field code, starts, next, 0
+    str next_label = ir_index_field code, starts, next, 1
+    int yes = str.eq next_op, 'label' and str.eq next_label, target
+    sys.free next_op
+    sys.free next_label
+    = yes
+]
+
+fn ir_cfg_simplify [str code] str [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+    str aliases = ir_cfg_simplify_collect_phi_aliases code, starts, record_count
+
+    str out = str.slice '', 0, 0
+    int i = 0
+    while [i lt record_count and g_fatal_error eq 0] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+        int emit = 1
+
+        if [ir_cfg_simplify_is_single_phi op, c] [ emit = 0 ]
+
+        if [str.eq op, 'cbranch'] [
+            a = ir_resolve_alias aliases, a
+            if [str.eq b, c] [
+                op = 'branch'
+                a = b
+                b = ''
+                c = ''
+            ]
+        ]
+
+        if [str.eq op, 'branch'] [
+            if [ir_cfg_simplify_branch_to_next code, starts, record_count, i, a] [ emit = 0 ]
+        ]
+
+        if [emit] [
+            str encoded = ir_m2r_ssa_rewrite_record aliases, op, a, b, c, d, e
+            out = ir_append_owned out, encoded
+            sys.free encoded
+        ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i add 1
+    ]
+
+    sys.free starts
+    if [g_fatal_error] [
+        sys.free out
+        = ''
+    ]
+    = out
+]
