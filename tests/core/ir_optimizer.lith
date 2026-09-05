@@ -51,6 +51,12 @@ fn sccp_join_constant [int input] int [
     ]
 ]
 
+fn gvn_duplicate [int input] int [
+    int left = input add 1
+    int right = input add 1
+    = left add right
+]
+
 fn main [] int [
     int folded = 2 add 3
     if [1 eq 1] [
