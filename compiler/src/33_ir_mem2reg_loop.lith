@@ -1,0 +1,275 @@
+# Conservative loop/back-edge mem2reg for entry-initialized scalar stack slots.
+#
+# Phi result temporaries are reserved before rewriting, so loop bodies may use
+# header phi values before back-edge definitions appear in serialized order.
+# A second emission pass fills phi payloads after every predecessor out-value
+# is known. Candidates must be scalar entry allocas with an entry-block store;
+# escaping addresses remain on the stack path.
+
+fn ir_m2r_loop_is_entry_initialized [str code, ptr int starts, int record_count, str slot] int [
+    int block = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str c = ir_index_field code, starts, i, 3
+        if [str.eq op, 'label'] [ block = block add 1 ]
+        if [block eq 0 and str.eq op, 'store' and str.eq c, slot] [
+            sys.free op
+            sys.free c
+            = 1
+        ]
+        sys.free op
+        sys.free c
+        i = i add 1
+    ]
+    = 0
+]
+
+fn ir_m2r_loop_promotable [str code, ptr int starts, int record_count, str slots, str unsafe, str slot] int [
+    if [not ir_m2r_ssa_promotable slots, unsafe, slot] [ = 0 ]
+    = ir_m2r_loop_is_entry_initialized code, starts, record_count, slot
+]
+
+fn ir_m2r_loop_assign_phi_temps [str code, ptr int starts, int record_count, str slots, str unsafe, str plan] str [
+    str phis = ''
+    int block = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str slot = ir_index_field code, starts, i, 1
+        if [str.eq op, 'label'] [ block = block add 1 ]
+        if [str.eq op, 'stack_alloc'] [
+            if [ir_m2r_loop_promotable code, starts, record_count, slots, unsafe, slot] [
+                int b = 1
+                while [b lt ir_dom_block_count code, starts, record_count] [
+                    if [ir_m2r_ssa_has plan, slot, b] [
+                        str phi = ir_new_value 0
+                        phis = ir_m2r_ssa_value_put phis, slot, b, phi
+                        sys.free phi
+                    ]
+                    b = b add 1
+                ]
+            ]
+        ]
+        sys.free op
+        sys.free slot
+        i = i add 1
+    ]
+    = phis
+]
+
+fn ir_m2r_loop_set_block_entry [str code, ptr int starts, int record_count, str slots, str unsafe, str phis, ptr int edges, int block_count, int block, str values] str [
+    str out = values
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str slot = ir_index_field code, starts, i, 1
+        if [str.eq op, 'stack_alloc'] [
+            if [ir_m2r_loop_promotable code, starts, record_count, slots, unsafe, slot] [
+                str phi = ir_m2r_ssa_value_get phis, slot, block
+                if [not str.eq phi, ''] [
+                    out = ir_m2r_ssa_value_put out, slot, block, phi
+                ]
+                else [
+                    int have = 0
+                    int same = 1
+                    str first = ''
+                    int pred = 0
+                    while [pred lt block_count] [
+                        int edge_slot = ir_dom_slot pred, block, block_count
+                        if [edges[edge_slot]] [
+                            str incoming = ir_m2r_ssa_value_get out, slot, pred
+                            if [not str.eq incoming, ''] [
+                                if [have eq 0] [ first = str.slice incoming, 0, str.len incoming ] ]
+                                else [
+                                    if [not str.eq first, incoming] [ same = 0 ]
+                                ]
+                                have = have add 1
+                            ]
+                            sys.free incoming
+                        ]
+                        pred = pred add 1
+                    ]
+                    if [have gt 0 and same] [ out = ir_m2r_ssa_value_put out, slot, block, first ]
+                    sys.free first
+                ]
+                sys.free phi
+            ]
+        ]
+        sys.free op
+        sys.free slot
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_m2r_loop_emit_phis_for_block [str code, ptr int starts, int record_count, str slots, str unsafe, str phis, ptr int edges, int block_count, int block, str values] str [
+    str out = ''
+    int i = 0
+    while [i lt record_count and g_fatal_error eq 0] [
+        str op = ir_index_field code, starts, i, 0
+        str slot = ir_index_field code, starts, i, 1
+        if [str.eq op, 'stack_alloc'] [
+            if [ir_m2r_loop_promotable code, starts, record_count, slots, unsafe, slot] [
+                str phi = ir_m2r_ssa_value_get phis, slot, block
+                if [not str.eq phi, ''] [
+                    str typ = map_get slots, slot
+                    str payload = ''
+                    int count = 0
+                    int pred = 0
+                    while [pred lt block_count and g_fatal_error eq 0] [
+                        int edge_slot = ir_dom_slot pred, block, block_count
+                        if [edges[edge_slot]] [
+                            str incoming = ir_m2r_ssa_value_get values, slot, pred
+                            if [str.eq incoming, ''] [
+                                ir_validation_error 'loop mem2reg phi predecessor has no current value'
+                            ]
+                            else [
+                                str label = ir_m2r_ssa_label_for_block code, starts, record_count, pred
+                                str pair = ir_arg_pair incoming, label
+                                payload = ir_append_owned payload, pair
+                                sys.free pair
+                                sys.free label
+                                count = count add 1
+                            ]
+                            sys.free incoming
+                        ]
+                        pred = pred add 1
+                    ]
+                    if [g_fatal_error eq 0] [
+                        str count_text = int.str count
+                        str encoded = ir_encode_record 'phi', phi, typ, count_text, '', payload
+                        out = ir_append_owned out, encoded
+                        sys.free encoded
+                        sys.free count_text
+                    ]
+                    sys.free typ
+                    sys.free payload
+                ]
+                sys.free phi
+            ]
+        ]
+        sys.free op
+        sys.free slot
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_mem2reg_loop [str code] str [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+
+    int block_count = ir_dom_block_count code, starts, record_count
+    int matrix_size = block_count mul block_count
+    ptr int edges = sys.alloc matrix_size
+    ptr int dom = sys.alloc matrix_size
+    ptr int frontier = sys.alloc matrix_size
+    ir_dom_build_edges code, starts, record_count, block_count, edges
+    ir_dom_compute edges, block_count, dom
+    ir_dom_compute_frontier edges, dom, block_count, frontier
+
+    str slots = ir_m2r_ssa_collect_entry_slots code, starts, record_count
+    str unsafe = ir_m2r_ssa_collect_unsafe code, starts, record_count, slots
+    str defs = ir_m2r_ssa_collect_def_blocks code, starts, record_count, slots, unsafe
+    str plan = ir_m2r_ssa_place_phis code, starts, record_count, slots, unsafe, defs, frontier, block_count
+    str phis = ir_m2r_loop_assign_phi_temps code, starts, record_count, slots, unsafe, plan
+
+    str aliases = ''
+    str values = ''
+    str body = str.slice '', 0, 0
+    int block = 0
+    int i = 0
+    while [i lt record_count and g_fatal_error eq 0] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+        int emit = 1
+
+        if [str.eq op, 'label'] [
+            block = block add 1
+            values = ir_m2r_loop_set_block_entry code, starts, record_count, slots, unsafe, phis, edges, block_count, block, values
+        ]
+
+        if [str.eq op, 'stack_alloc'] [
+            if [ir_m2r_loop_promotable code, starts, record_count, slots, unsafe, a] [ emit = 0 ]
+        ]
+        if [str.eq op, 'load'] [
+            if [ir_m2r_loop_promotable code, starts, record_count, slots, unsafe, c] [
+                str current = ir_m2r_ssa_value_get values, c, block
+                if [str.eq current, ''] [
+                    ir_validation_error 'loop mem2reg load has no current value'
+                ]
+                else [
+                    aliases = map_put aliases, a, current
+                    emit = 0
+                ]
+                sys.free current
+            ]
+        ]
+        if [str.eq op, 'store'] [
+            b = ir_resolve_alias aliases, b
+            if [ir_m2r_loop_promotable code, starts, record_count, slots, unsafe, c] [
+                values = ir_m2r_ssa_value_put values, c, block, b
+                emit = 0
+            ]
+        ]
+
+        if [emit and g_fatal_error eq 0] [
+            str encoded = ir_m2r_ssa_rewrite_record aliases, op, a, b, c, d, e
+            body = ir_append_owned body, encoded
+            sys.free encoded
+        ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i add 1
+    ]
+
+    str out = str.slice '', 0, 0
+    if [g_fatal_error eq 0] [
+        int body_count = ir_index_record_count body
+        int body_slots = body_count add 1
+        ptr int body_starts = sys.alloc body_slots
+        ir_index_fill body, body_count, body_starts
+        block = 0
+        i = 0
+        while [i lt body_count and g_fatal_error eq 0] [
+            str line = ir_index_line body, body_starts, i
+            str op2 = ir_index_field body, body_starts, i, 0
+            out = ir_append_owned out, line
+            out = ir_append_owned out, g_newline
+            if [str.eq op2, 'label'] [
+                block = block add 1
+                str phi_lines = ir_m2r_loop_emit_phis_for_block code, starts, record_count, slots, unsafe, phis, edges, block_count, block, values
+                out = ir_append_owned out, phi_lines
+                sys.free phi_lines
+            ]
+            sys.free line
+            sys.free op2
+            i = i add 1
+        ]
+        sys.free body_starts
+    ]
+
+    sys.free starts
+    sys.free edges
+    sys.free dom
+    sys.free frontier
+    sys.free body
+
+    if [g_fatal_error] [
+        sys.free out
+        = ''
+    ]
+    = out
+]
