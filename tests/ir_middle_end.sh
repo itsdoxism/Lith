@@ -93,6 +93,11 @@ grep -q 'ir_index_fill' compiler/src/27_ir_index.lith
 grep -q 'fn ir_cfg_collect_reachable' compiler/src/28_ir_cfg.lith
 grep -q 'fn ir_cfg_collect_edges' compiler/src/28_ir_cfg.lith
 grep -q 'fn ir_cfg_has_edge' compiler/src/28_ir_cfg.lith
+grep -q 'fn ir_cfg_validate_phi_edges' compiler/src/28_ir_cfg.lith
+grep -q 'phi contains duplicate predecessor' compiler/src/28_ir_cfg.lith
+grep -q 'phi predecessor is not a CFG edge' compiler/src/28_ir_cfg.lith
+grep -q 'fn ir_cfg_validate_pruned' compiler/src/28_ir_cfg.lith
+grep -q 'ir_cfg_validate_pruned out' compiler/src/28_ir_cfg.lith
 grep -q 'ir_cfg_has_edge edges, pred, block_label' compiler/src/28_ir_cfg.lith
 grep -q 'fn ir_cfg_prune_unreachable' compiler/src/28_ir_cfg.lith
 grep -q 'fn ir_dom_compute' compiler/src/29_ir_dom.lith
