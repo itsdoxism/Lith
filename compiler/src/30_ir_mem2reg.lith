@@ -1,0 +1,254 @@
+# Conservative single-block mem2reg for scalar stack slots.
+#
+# A slot is promotable only when every use stays in the allocation block,
+# the address is used only as the exact address operand of load/store, and
+# every load is preceded by a store. No phi insertion or cross-block rewrite
+# happens here; those belong to the later full SSA promotion pass.
+
+fn ir_m2r_slot_block [str slots, str value] int [
+    if [not ir_value_is_temp value] [ = 0 sub 1 ]
+    str block_text = map_get slots, value
+    if [str.eq block_text, ''] [ = 0 sub 1 ]
+    = ir_parse_count_text block_text
+]
+
+fn ir_m2r_mark_unsafe [str slots, str unsafe, str value, int block, int address_ok] str [
+    int alloc_block = ir_m2r_slot_block slots, value
+    if [alloc_block lt 0] [ = unsafe ]
+    if [address_ok and alloc_block eq block] [ = unsafe ]
+    = map_put unsafe, value, '1'
+]
+
+fn ir_m2r_is_unsafe [str unsafe, str value] int [
+    str known = map_get unsafe, value
+    = str.eq known, '1'
+]
+
+fn ir_m2r_is_promotable [str slots, str unsafe, str value] int [
+    if [ir_m2r_slot_block slots, value lt 0] [ = 0 ]
+    = not ir_m2r_is_unsafe unsafe, value
+]
+
+fn ir_m2r_collect_slots [str code, ptr int starts, int record_count] str [
+    str slots = ''
+    int block = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        if [str.eq op, 'label'] [ block = block add 1 ]
+        if [str.eq op, 'stack_alloc'] [
+            if [not is_aggregate_type b] [
+                str block_text = int.str block
+                slots = map_put slots, a, block_text
+                sys.free block_text
+            ]
+        ]
+        sys.free op
+        sys.free a
+        sys.free b
+        i = i add 1
+    ]
+    = slots
+]
+
+fn ir_m2r_mark_call_unsafe [str slots, str unsafe, str payload, int count, int block] str [
+    str out = unsafe
+    int i = 0
+    while [i lt count] [
+        str value = ir_arg_value payload, i
+        out = ir_m2r_mark_unsafe slots, out, value, block, 0
+        sys.free value
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_m2r_mark_phi_unsafe [str slots, str unsafe, str payload, int count, int block] str [
+    str out = unsafe
+    int i = 0
+    while [i lt count] [
+        str pair = ir_list_item payload, i
+        str value = ir_pair_left pair
+        out = ir_m2r_mark_unsafe slots, out, value, block, 0
+        sys.free pair
+        sys.free value
+        i = i add 1
+    ]
+    = out
+]
+
+fn ir_m2r_collect_unsafe [str code, ptr int starts, int record_count, str slots] str [
+    str unsafe = ''
+    str seen_store = ''
+    int block = 0
+    int i = 0
+    while [i lt record_count] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+
+        if [str.eq op, 'label'] [ block = block add 1 ]
+
+        if [str.eq op, 'load'] [
+            unsafe = ir_m2r_mark_unsafe slots, unsafe, c, block, 1
+            int alloc_block = ir_m2r_slot_block slots, c
+            if [alloc_block eq block] [
+                str stored = map_get seen_store, c
+                if [not str.eq stored, '1'] [ unsafe = map_put unsafe, c, '1' ]
+            ]
+        ]
+        if [str.eq op, 'store'] [
+            unsafe = ir_m2r_mark_unsafe slots, unsafe, b, block, 0
+            unsafe = ir_m2r_mark_unsafe slots, unsafe, c, block, 1
+            int alloc_block2 = ir_m2r_slot_block slots, c
+            if [alloc_block2 eq block] [ seen_store = map_put seen_store, c, '1' ]
+        ]
+        if [str.eq op, 'array_addr' or str.eq op, 'pointer_addr'] [
+            unsafe = ir_m2r_mark_unsafe slots, unsafe, c, block, 0
+            unsafe = ir_m2r_mark_unsafe slots, unsafe, d, block, 0
+        ]
+        if [str.eq op, 'field_addr'] [ unsafe = ir_m2r_mark_unsafe slots, unsafe, c, block, 0 ]
+        if [str.eq op, 'truthy_pointer' or str.eq op, 'truthy_float' or str.eq op, 'truthy_int' or str.eq op, 'not_bool'] [
+            unsafe = ir_m2r_mark_unsafe slots, unsafe, b, block, 0
+        ]
+        if [str.eq op, 'bool_to_int' or str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [
+            unsafe = ir_m2r_mark_unsafe slots, unsafe, b, block, 0
+        ]
+        if [str.eq op, 'logic' or str.eq op, 'compare_int' or str.eq op, 'compare_bool' or str.eq op, 'compare_pointer' or str.eq op, 'compare_float' or str.eq op, 'arith_int' or str.eq op, 'arith_float'] [
+            unsafe = ir_m2r_mark_unsafe slots, unsafe, c, block, 0
+            unsafe = ir_m2r_mark_unsafe slots, unsafe, d, block, 0
+        ]
+        if [str.eq op, 'cbranch'] [ unsafe = ir_m2r_mark_unsafe slots, unsafe, a, block, 0 ]
+        if [str.eq op, 'return'] [ unsafe = ir_m2r_mark_unsafe slots, unsafe, b, block, 0 ]
+        if [str.eq op, 'alloc'] [ unsafe = ir_m2r_mark_unsafe slots, unsafe, c, block, 0 ]
+        if [str.eq op, 'realloc'] [
+            unsafe = ir_m2r_mark_unsafe slots, unsafe, c, block, 0
+            unsafe = ir_m2r_mark_unsafe slots, unsafe, d, block, 0
+        ]
+        if [str.eq op, 'free' or str.eq op, 'print_line'] [ unsafe = ir_m2r_mark_unsafe slots, unsafe, a, block, 0 ]
+        if [str.eq op, 'call'] [ unsafe = ir_m2r_mark_call_unsafe slots, unsafe, e, ir_parse_count_text d, block ]
+        if [str.eq op, 'phi'] [ unsafe = ir_m2r_mark_phi_unsafe slots, unsafe, e, ir_parse_count_text c, block ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i add 1
+    ]
+    = unsafe
+]
+
+fn ir_m2r_rewrite_args [str aliases, str payload, int count] str [
+    = ir_rewrite_args aliases, payload, count
+]
+
+fn ir_m2r_rewrite_phi [str aliases, str payload, int count] str [
+    = ir_rewrite_phi_payload aliases, payload, count
+]
+
+fn ir_mem2reg_single_block [str code] str [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+    str slots = ir_m2r_collect_slots code, starts, record_count
+    str unsafe = ir_m2r_collect_unsafe code, starts, record_count, slots
+
+    str aliases = ''
+    str values = ''
+    str out = str.slice '', 0, 0
+    int i = 0
+    while [i lt record_count and g_fatal_error eq 0] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+        str b = ir_index_field code, starts, i, 2
+        str c = ir_index_field code, starts, i, 3
+        str d = ir_index_field code, starts, i, 4
+        str e = ir_index_field code, starts, i, 5
+        int emit = 1
+
+        if [str.eq op, 'stack_alloc'] [
+            if [ir_m2r_is_promotable slots, unsafe, a] [ emit = 0 ]
+        ]
+        if [str.eq op, 'load'] [
+            c = ir_resolve_alias aliases, c
+            if [ir_m2r_is_promotable slots, unsafe, c] [
+                str current = map_get values, c
+                if [str.eq current, ''] [
+                    ir_validation_error 'mem2reg promotable load has no current value'
+                ]
+                else [
+                    aliases = map_put aliases, a, current
+                    emit = 0
+                ]
+            ]
+        ]
+        if [str.eq op, 'store'] [
+            b = ir_resolve_alias aliases, b
+            c = ir_resolve_alias aliases, c
+            if [ir_m2r_is_promotable slots, unsafe, c] [
+                values = map_put values, c, b
+                emit = 0
+            ]
+        ]
+        if [str.eq op, 'array_addr' or str.eq op, 'pointer_addr'] [
+            c = ir_resolve_alias aliases, c
+            d = ir_resolve_alias aliases, d
+        ]
+        if [str.eq op, 'field_addr'] [ c = ir_resolve_alias aliases, c ]
+        if [str.eq op, 'truthy_pointer' or str.eq op, 'truthy_float' or str.eq op, 'truthy_int' or str.eq op, 'not_bool'] [
+            b = ir_resolve_alias aliases, b
+        ]
+        if [str.eq op, 'bool_to_int' or str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [
+            b = ir_resolve_alias aliases, b
+        ]
+        if [str.eq op, 'logic' or str.eq op, 'compare_int' or str.eq op, 'compare_bool' or str.eq op, 'compare_pointer' or str.eq op, 'compare_float' or str.eq op, 'arith_int' or str.eq op, 'arith_float'] [
+            c = ir_resolve_alias aliases, c
+            d = ir_resolve_alias aliases, d
+        ]
+        if [str.eq op, 'cbranch'] [ a = ir_resolve_alias aliases, a ]
+        if [str.eq op, 'return'] [ b = ir_resolve_alias aliases, b ]
+        if [str.eq op, 'alloc'] [ c = ir_resolve_alias aliases, c ]
+        if [str.eq op, 'realloc'] [
+            c = ir_resolve_alias aliases, c
+            d = ir_resolve_alias aliases, d
+        ]
+        if [str.eq op, 'free' or str.eq op, 'print_line'] [ a = ir_resolve_alias aliases, a ]
+        if [str.eq op, 'call'] [
+            int argc = ir_parse_count_text d
+            e = ir_m2r_rewrite_args aliases, e, argc
+        ]
+        if [str.eq op, 'phi'] [
+            int pc = ir_parse_count_text c
+            e = ir_m2r_rewrite_phi aliases, e, pc
+        ]
+
+        if [emit and g_fatal_error eq 0] [
+            str encoded = ir_encode_record op, a, b, c, d, e
+            out = ir_append_owned out, encoded
+            sys.free encoded
+        ]
+
+        sys.free op
+        sys.free a
+        sys.free b
+        sys.free c
+        sys.free d
+        sys.free e
+        i = i add 1
+    ]
+
+    sys.free starts
+    if [g_fatal_error] [
+        sys.free out
+        = ''
+    ]
+    = out
+]
