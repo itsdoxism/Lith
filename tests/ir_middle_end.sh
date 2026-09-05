@@ -116,6 +116,16 @@ if grep -q 'icmp .* i32 7, 7' "$SCCP_BODY"; then
     exit 1
 fi
 
+# Dominator-aware GVN should compute input+1 once and reuse that SSA value for
+# the second identical expression. The final addition of left+right remains.
+GVN_BODY="$BUILD/gvn_duplicate.ll"
+sed -n '/^define i32 @gvn_duplicate/,/^}/p' "$IR" > "$GVN_BODY"
+GVN_ADD_COUNT=$(grep -c ' add i32 ' "$GVN_BODY" || true)
+if [ "$GVN_ADD_COUNT" -ne 2 ]; then
+    echo "GVN expected two integer adds after CSE, found $GVN_ADD_COUNT" >&2
+    exit 1
+fi
+
 MAIN_BODY="$BUILD/main.ll"
 sed -n '/^define i32 @main/,/^}/p' "$IR" > "$MAIN_BODY"
 if grep -q 'call i32 @local_load' "$MAIN_BODY"; then
@@ -203,7 +213,17 @@ grep -q 'fn ir_sccp_optimize_edges' compiler/src/35_ir_sccp_edges.lith
 grep -q 'compiler/src/35_ir_sccp_edges.lith' Makefile
 grep -q 'fn ir_cfg_simplify_collect_phi_aliases' compiler/src/36_ir_cfg_simplify.lith
 grep -q 'fn ir_cfg_simplify_branch_to_next' compiler/src/36_ir_cfg_simplify.lith
-grep -q 'fn ir_cfg_simplify' compiler/src/36_ir_cfg_simplify.lith
+grep -q 'ir_cfg_thread_branches out' compiler/src/36_ir_cfg_simplify.lith
+grep -q 'ir_cfg_merge_blocks threaded' compiler/src/36_ir_cfg_simplify.lith
+grep -q 'ir_gvn_optimize merged' compiler/src/36_ir_cfg_simplify.lith
 grep -q 'compiler/src/36_ir_cfg_simplify.lith' Makefile
+grep -q 'fn ir_cfg_thread_branches' compiler/src/37_ir_cfg_merge.lith
+grep -q 'fn ir_cfg_merge_blocks' compiler/src/37_ir_cfg_merge.lith
+grep -q 'compiler/src/37_ir_cfg_merge.lith' Makefile
+grep -q 'fn ir_gvn_candidate' compiler/src/38_ir_gvn.lith
+grep -q 'fn ir_gvn_key' compiler/src/38_ir_gvn.lith
+grep -q 'ir_dom_dominates dom, block_count, previous_block, block' compiler/src/38_ir_gvn.lith
+grep -q 'fn ir_gvn_optimize' compiler/src/38_ir_gvn.lith
+grep -q 'compiler/src/38_ir_gvn.lith' Makefile
 
-echo 'Lith IR validator + verified optimizer/CFG/mem2reg/edge-SCCP pipeline: passed'
+echo 'Lith IR validator + verified optimizer/CFG/mem2reg/SCCP/GVN pipeline: passed'
