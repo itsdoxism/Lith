@@ -139,6 +139,8 @@ fn backend_operand [str value] str [
 fn backend_symbol_name [str name] str [
     if [str.eq name, 'io.read_text'] [ = 'luna_read_text' ]
     if [str.eq name, 'io.write_text'] [ = 'luna_write_text' ]
+    if [str.eq name, 'fs.read_text'] [ = 'luna_read_text' ]
+    if [str.eq name, 'fs.write_text'] [ = 'luna_write_text' ]
     if [str.eq name, 'str.len'] [ = 'luna_str_len' ]
     if [str.eq name, 'str.at'] [ = 'luna_str_at' ]
     if [str.eq name, 'str.slice'] [ = 'luna_str_slice' ]
@@ -147,6 +149,11 @@ fn backend_symbol_name [str name] str [
     if [str.eq name, 'str.starts'] [ = 'luna_str_starts' ]
     if [str.eq name, 'str.trim'] [ = 'luna_str_trim' ]
     if [str.eq name, 'str.chr'] [ = 'luna_str_chr' ]
+    if [str.eq name, 'bytes.len'] [ = 'luna_str_len' ]
+    if [str.eq name, 'bytes.at'] [ = 'luna_str_at' ]
+    if [str.eq name, 'bytes.slice'] [ = 'luna_str_slice' ]
+    if [str.eq name, 'bytes.concat'] [ = 'luna_str_concat' ]
+    if [str.eq name, 'bytes.eq'] [ = 'luna_str_eq' ]
     if [str.eq name, 'int.str'] [ = 'luna_int_str' ]
     = name
 ]
