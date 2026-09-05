@@ -13,8 +13,9 @@ BIN="$BUILD/optimizer"
 "$LITHC" tests/core/ir_optimizer.lith "$IR"
 
 # The Lith middle-end should fold both the integer expression and the
-# compile-time condition before LLVM lowering sees them.
-grep -q 'store i32 5' "$IR"
+# compile-time condition before LLVM lowering sees them. Mem2reg may remove the
+# old stack store entirely, so assert the folded result instead of stack shape.
+grep -q 'ret i32 5' "$IR"
 if grep -q 'add i32 2, 3' "$IR"; then
     echo 'IR optimizer failed to fold integer addition' >&2
     exit 1
