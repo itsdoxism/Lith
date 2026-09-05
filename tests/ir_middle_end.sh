@@ -153,6 +153,13 @@ grep -q 'fn ir_dom_frontier_contains' compiler/src/29_ir_dom_tree.lith
 grep -q 'fn ir_dom_tree_frontier_verify' compiler/src/29_ir_dom_tree.lith
 grep -q 'fn ir_ud_collect_defs' compiler/src/29_ir_use_def.lith
 grep -q 'fn ir_ud_collect_uses' compiler/src/29_ir_use_def.lith
+grep -q 'fn ir_validate_ssa_dominance' compiler/src/29_ir_ssa_validate.lith
+grep -q 'fn ir_ssa_validate_phi_value' compiler/src/29_ir_ssa_validate.lith
+grep -q 'phi incoming value does not dominate predecessor edge' compiler/src/29_ir_ssa_validate.lith
+grep -q 'phi uses undefined temporary value' compiler/src/29_ir_ssa_validate.lith
+grep -q 'compiler/src/29_ir_ssa_validate.lith' Makefile
+grep -q 'ir_validate_ssa_dominance code' compiler/src/30_ir_mem2reg.lith
+grep -q 'ir_validate_ssa_dominance multi' compiler/src/30_ir_mem2reg.lith
 grep -q 'fn ir_m2r_collect_slots' compiler/src/30_ir_mem2reg.lith
 grep -q 'fn ir_m2r_collect_unsafe' compiler/src/30_ir_mem2reg.lith
 grep -q 'ir_mem2reg_multi_block out' compiler/src/30_ir_mem2reg.lith
