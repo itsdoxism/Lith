@@ -77,6 +77,14 @@ fn python_program [] str [
     = 'python3'
 ]
 
+fn trusted_seed [] str [
+    str explicit = process.env 'LITH_SEED'
+    if [explicit] [ = explicit ]
+    str bundled = 'bootstrap/seed/lithc-linux-x86_64'
+    if [fs.exists bundled] [ = bundled ]
+    = ''
+]
+
 fn compile_native [str clang, str llvm, str output] int [
     str args = '-Wno-override-module\n-O2\n'
     args = str.concat args, llvm
@@ -121,8 +129,6 @@ fn verify_self_host [] int [
         = 90
     ]
 
-    # Re-run once more from the same verified compiler. This catches accidental
-    # nondeterminism in emission even when the first self-host edge happens to match.
     int stage4 = run 'build/lithc', 'build/lithc.lith\nbuild/lithc-stage4.ll', 'stage4 self-host emission'
     if [stage4 ne 0] [ = stage4 ]
     if [same_file 'build/lithc-stage3.ll', 'build/lithc-stage4.ll' eq 0] [
@@ -142,13 +148,15 @@ fn main [int argc, ptr str argv] int [
     if [fs.write_text 'build/lithc.lith', source eq 0] [ = 11 ]
 
     str clang = clang_program []
-    str seed = process.env 'LITH_SEED'
+    str seed = trusted_seed []
 
     if [seed] [
+        print str.concat 'Lith bootstrap seed: ', seed
         int stage2 = run seed, 'build/lithc.lith\nbuild/lithc-stage2.ll', 'seed compile'
         if [stage2 ne 0] [ = stage2 ]
     ]
     else [
+        print 'No trusted seed found; using Python bootstrap fallback'
         str python = python_program []
         int bootstrap = run python, 'compiler/lith_bootstrap_llvm.py\nbuild/lithc.lith\nbuild/lithc-stage1.ll', 'bootstrap LLVM emission'
         if [bootstrap ne 0] [ = bootstrap ]
