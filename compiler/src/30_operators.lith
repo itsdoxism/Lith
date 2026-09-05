@@ -28,6 +28,8 @@ fn starts_expr [int unused] int [
 fn builtin_ret [str name] str [
     if [str.eq name, 'io.read_text'] [ = 'str' ]
     if [str.eq name, 'io.write_text'] [ = 'int' ]
+    if [str.eq name, 'fs.read_text'] [ = 'str' ]
+    if [str.eq name, 'fs.write_text'] [ = 'int' ]
     if [str.eq name, 'str.len'] [ = 'int' ]
     if [str.eq name, 'str.at'] [ = 'int' ]
     if [str.eq name, 'str.slice'] [ = 'str' ]
@@ -36,6 +38,11 @@ fn builtin_ret [str name] str [
     if [str.eq name, 'str.starts'] [ = 'int' ]
     if [str.eq name, 'str.trim'] [ = 'str' ]
     if [str.eq name, 'str.chr'] [ = 'str' ]
+    if [str.eq name, 'bytes.len'] [ = 'int' ]
+    if [str.eq name, 'bytes.at'] [ = 'int' ]
+    if [str.eq name, 'bytes.slice'] [ = 'str' ]
+    if [str.eq name, 'bytes.concat'] [ = 'str' ]
+    if [str.eq name, 'bytes.eq'] [ = 'int' ]
     if [str.eq name, 'int.str'] [ = 'str' ]
     = map_get g_fn_ret, name
 ]
@@ -43,6 +50,8 @@ fn builtin_ret [str name] str [
 fn builtin_argc [str name] int [
     if [str.eq name, 'io.read_text'] [ = 1 ]
     if [str.eq name, 'io.write_text'] [ = 2 ]
+    if [str.eq name, 'fs.read_text'] [ = 1 ]
+    if [str.eq name, 'fs.write_text'] [ = 2 ]
     if [str.eq name, 'str.len'] [ = 1 ]
     if [str.eq name, 'str.at'] [ = 2 ]
     if [str.eq name, 'str.slice'] [ = 3 ]
@@ -51,6 +60,11 @@ fn builtin_argc [str name] int [
     if [str.eq name, 'str.starts'] [ = 2 ]
     if [str.eq name, 'str.trim'] [ = 1 ]
     if [str.eq name, 'str.chr'] [ = 1 ]
+    if [str.eq name, 'bytes.len'] [ = 1 ]
+    if [str.eq name, 'bytes.at'] [ = 2 ]
+    if [str.eq name, 'bytes.slice'] [ = 3 ]
+    if [str.eq name, 'bytes.concat'] [ = 2 ]
+    if [str.eq name, 'bytes.eq'] [ = 2 ]
     if [str.eq name, 'int.str'] [ = 1 ]
     str n = map_get g_fn_argc, name
     if [str.eq n, ''] [ = 0 ]
@@ -66,6 +80,8 @@ fn call_argc_text [str name] str [
 fn builtin_param [str name, int index] str [
     if [str.eq name, 'io.read_text'] [ = 'str' ]
     if [str.eq name, 'io.write_text'] [ = 'str' ]
+    if [str.eq name, 'fs.read_text'] [ = 'str' ]
+    if [str.eq name, 'fs.write_text'] [ = 'str' ]
     if [str.eq name, 'str.len'] [ = 'str' ]
     if [str.eq name, 'str.at'] [
         if [index eq 0] [ = 'str' ]
@@ -80,6 +96,17 @@ fn builtin_param [str name, int index] str [
     if [str.eq name, 'str.starts'] [ = 'str' ]
     if [str.eq name, 'str.trim'] [ = 'str' ]
     if [str.eq name, 'str.chr'] [ = 'int' ]
+    if [str.eq name, 'bytes.len'] [ = 'str' ]
+    if [str.eq name, 'bytes.at'] [
+        if [index eq 0] [ = 'str' ]
+        = 'int'
+    ]
+    if [str.eq name, 'bytes.slice'] [
+        if [index eq 0] [ = 'str' ]
+        = 'int'
+    ]
+    if [str.eq name, 'bytes.concat'] [ = 'str' ]
+    if [str.eq name, 'bytes.eq'] [ = 'str' ]
     if [str.eq name, 'int.str'] [ = 'int' ]
     str key = fn_param_key name, index
     = map_get g_fn_params, key
