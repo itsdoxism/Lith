@@ -1,7 +1,8 @@
 # Conservative natural-loop analysis and loop-invariant code motion.
 #
 # LICM v1 handles a verified natural loop whose back-edge tail -> header has a
-# unique explicit preheader. Only non-trapping, deterministic SSA operations
+# unique preheader. The preheader may end in an explicit branch or adjacent
+# fallthrough after CFG cleanup. Only non-trapping, deterministic SSA operations
 # move; memory, calls, allocation, address calculation, phi, div/mod and
 # potentially invalid float-to-int conversion stay in place.
 
@@ -60,6 +61,31 @@ fn ir_licm_build_loop [ptr int edges, int block_count, int tail, int header, ptr
     = 0
 ]
 
+fn ir_licm_preheader_edge_ok [str code, ptr int starts, int record_count, int preheader, int header] int [
+    int header_start = ir_cfg_block_start_record code, starts, record_count, header
+    if [header_start lt 0] [ = 0 ]
+
+    # Empty implicit entry can fall directly into the first explicit header.
+    if [preheader eq 0 and header_start eq 0] [ = 1 ]
+
+    int end = ir_cfg_block_end_record code, starts, record_count, preheader
+    if [end lt 0] [ = 0 ]
+    str op = ir_index_field code, starts, end, 0
+    if [str.eq op, 'branch'] [
+        str target = ir_index_field code, starts, end, 1
+        str header_label = ir_m2r_ssa_label_for_block code, starts, record_count, header
+        int explicit_ok = str.eq target, header_label
+        sys.free target
+        sys.free header_label
+        sys.free op
+        = explicit_ok
+    ]
+    sys.free op
+
+    int next_record = end add 1
+    = next_record eq header_start
+]
+
 fn ir_licm_find_preheader [str code, ptr int starts, int record_count, ptr int edges, int block_count, ptr int loop, int header] int [
     int preheader = 0 sub 1
     int pred = 0
@@ -72,22 +98,23 @@ fn ir_licm_find_preheader [str code, ptr int starts, int record_count, ptr int e
         pred = pred add 1
     ]
     if [preheader lt 0] [ = 0 sub 1 ]
+    if [ir_licm_preheader_edge_ok code, starts, record_count, preheader, header eq 0] [ = 0 sub 1 ]
+    = preheader
+]
+
+fn ir_licm_insert_record [str code, ptr int starts, int record_count, int preheader, int header] int [
+    int header_start = ir_cfg_block_start_record code, starts, record_count, header
+    if [preheader eq 0 and header_start eq 0] [ = header_start ]
 
     int end = ir_cfg_block_end_record code, starts, record_count, preheader
-    if [end lt 0] [ = 0 sub 1 ]
+    if [end lt 0] [ = header_start ]
     str op = ir_index_field code, starts, end, 0
-    if [not str.eq op, 'branch'] [
+    if [str.eq op, 'branch'] [
         sys.free op
-        = 0 sub 1
+        = end
     ]
-    str target = ir_index_field code, starts, end, 1
-    str header_label = ir_m2r_ssa_label_for_block code, starts, record_count, header
-    int ok = str.eq target, header_label
     sys.free op
-    sys.free target
-    sys.free header_label
-    if [ok eq 0] [ = 0 sub 1 ]
-    = preheader
+    = header_start
 ]
 
 fn ir_licm_value_invariant [str defs, ptr int loop, str invariant, str value] int [
@@ -237,7 +264,7 @@ fn ir_licm_move_once [str code] str [
         = unchanged3
     ]
 
-    int insert_at = ir_cfg_block_end_record code, starts, record_count, preheader
+    int insert_at = ir_licm_insert_record code, starts, record_count, preheader, header
     str out = str.slice '', 0, 0
     int i = 0
     while [i lt record_count] [
