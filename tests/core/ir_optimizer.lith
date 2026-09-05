@@ -57,6 +57,17 @@ fn gvn_duplicate [int input] int [
     = left add right
 ]
 
+fn licm_loop [int limit, int base] int [
+    int i = 0
+    int sum = 0
+    while [i lt limit] [
+        int invariant = base add 3
+        sum = sum add invariant
+        i = i add 1
+    ]
+    = sum
+]
+
 fn main [] int [
     int folded = 2 add 3
     if [1 eq 1] [
