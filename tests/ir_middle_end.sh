@@ -178,7 +178,9 @@ grep -q 'compiler/src/29_ir_ssa_validate.lith' Makefile
 grep -q 'ir_validate_ssa_dominance code' compiler/src/30_ir_mem2reg.lith
 grep -q 'ir_validate_ssa_dominance multi' compiler/src/30_ir_mem2reg.lith
 grep -q 'ir_sccp_optimize multi' compiler/src/30_ir_mem2reg.lith
-grep -q 'ir_cfg_prune_unreachable sccp' compiler/src/30_ir_mem2reg.lith
+grep -q 'ir_sccp_optimize_edges sccp' compiler/src/30_ir_mem2reg.lith
+grep -q 'ir_cfg_simplify edge_sccp' compiler/src/30_ir_mem2reg.lith
+grep -q 'ir_cfg_prune_unreachable simplified' compiler/src/30_ir_mem2reg.lith
 grep -q 'fn ir_mem2reg_single_block' compiler/src/30_ir_mem2reg.lith
 grep -q 'fn ir_mem2reg_multi_block_plan' compiler/src/31_ir_mem2reg_ssa.lith
 grep -q 'fn ir_m2r_ssa_place_phis' compiler/src/31_ir_mem2reg_ssa.lith
@@ -195,5 +197,13 @@ grep -q 'fn ir_sccp_phi_state' compiler/src/34_ir_sccp.lith
 grep -q 'fn ir_sccp_sweep' compiler/src/34_ir_sccp.lith
 grep -q 'fn ir_sccp_optimize' compiler/src/34_ir_sccp.lith
 grep -q 'compiler/src/34_ir_sccp.lith' Makefile
+grep -q 'fn ir_sccp_edge_phi_state' compiler/src/35_ir_sccp_edges.lith
+grep -q 'ir_sccp_edge_live executable_edges, pred, block_label' compiler/src/35_ir_sccp_edges.lith
+grep -q 'fn ir_sccp_optimize_edges' compiler/src/35_ir_sccp_edges.lith
+grep -q 'compiler/src/35_ir_sccp_edges.lith' Makefile
+grep -q 'fn ir_cfg_simplify_collect_phi_aliases' compiler/src/36_ir_cfg_simplify.lith
+grep -q 'fn ir_cfg_simplify_branch_to_next' compiler/src/36_ir_cfg_simplify.lith
+grep -q 'fn ir_cfg_simplify' compiler/src/36_ir_cfg_simplify.lith
+grep -q 'compiler/src/36_ir_cfg_simplify.lith' Makefile
 
-echo 'Lith IR validator + verified optimizer/CFG/mem2reg/SCCP pipeline: passed'
+echo 'Lith IR validator + verified optimizer/CFG/mem2reg/edge-SCCP pipeline: passed'
