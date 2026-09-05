@@ -128,9 +128,7 @@ fn ir_sccp_eval_binary [str states, str op, str kind, str left_value, str right_
             ]
         ]
         else [
-            if [str.eq kind, 'compare_int' or str.eq kind, 'compare_bool'] [
-                result = ir_fold_compare_int op, left, right
-            ]
+            if [str.eq kind, 'compare_int' or str.eq kind, 'compare_bool'] [ result = ir_fold_compare_int op, left, right ]
             else [ ok = 0 ]
         ]
     ]
@@ -198,12 +196,13 @@ fn ir_sccp_supported_result [str op] int [
     = 0
 ]
 
-# One monotone sweep over currently executable blocks. Fixed repeated sweeps in
-# ir_sccp_analyze reach the lattice/CFG fixed point without a worklist object.
+# One monotone sweep over currently executable blocks. Unknown conditional
+# values do not make either successor executable yet; overdefined conditions do.
 fn ir_sccp_sweep [str code, ptr int starts, int record_count, str states, str executable] str [
     str next_states = states
     str next_exec = executable
     int block = 0
+    int terminated = 0
     int i = 0
     while [i lt record_count] [
         str op = ir_index_field code, starts, i, 0
@@ -213,11 +212,19 @@ fn ir_sccp_sweep [str code, ptr int starts, int record_count, str states, str ex
         str d = ir_index_field code, starts, i, 4
         str e = ir_index_field code, starts, i, 5
 
-        if [str.eq op, 'label'] [ block = block add 1 ]
+        if [str.eq op, 'label'] [
+            int previous = block
+            block = block add 1
+            if [terminated eq 0 and ir_sccp_block_executable next_exec, previous] [
+                next_exec = ir_sccp_mark_block next_exec, block
+            ]
+            terminated = 0
+        ]
         if [ir_sccp_block_executable next_exec, block] [
             if [str.eq op, 'branch'] [
                 int target = ir_dom_block_for_label code, starts, record_count, a
                 next_exec = ir_sccp_mark_block next_exec, target
+                terminated = 1
             ]
             if [str.eq op, 'cbranch'] [
                 str cond = ir_sccp_operand_state next_states, a
@@ -229,21 +236,21 @@ fn ir_sccp_sweep [str code, ptr int starts, int record_count, str states, str ex
                     sys.free cv
                 ]
                 else [
-                    int yes = ir_dom_block_for_label code, starts, record_count, b
-                    int no = ir_dom_block_for_label code, starts, record_count, c
-                    next_exec = ir_sccp_mark_block next_exec, yes
-                    next_exec = ir_sccp_mark_block next_exec, no
+                    if [str.eq cond, 'o'] [
+                        int yes = ir_dom_block_for_label code, starts, record_count, b
+                        int no = ir_dom_block_for_label code, starts, record_count, c
+                        next_exec = ir_sccp_mark_block next_exec, yes
+                        next_exec = ir_sccp_mark_block next_exec, no
+                    ]
                 ]
+                terminated = 1
             ]
+            if [str.eq op, 'return' or str.eq op, 'unreachable'] [ terminated = 1 ]
 
             if [ir_sccp_supported_result op] [
                 str incoming = ''
-                if [str.eq op, 'truthy_int' or str.eq op, 'not_bool' or str.eq op, 'bool_to_int'] [
-                    incoming = ir_sccp_eval_unary next_states, op, b
-                ]
-                if [str.eq op, 'logic' or str.eq op, 'arith_int' or str.eq op, 'compare_int' or str.eq op, 'compare_bool'] [
-                    incoming = ir_sccp_eval_binary next_states, b, op, c, d
-                ]
+                if [str.eq op, 'truthy_int' or str.eq op, 'not_bool' or str.eq op, 'bool_to_int'] [ incoming = ir_sccp_eval_unary next_states, op, b ]
+                if [str.eq op, 'logic' or str.eq op, 'arith_int' or str.eq op, 'compare_int' or str.eq op, 'compare_bool'] [ incoming = ir_sccp_eval_binary next_states, b, op, c, d ]
                 if [str.eq op, 'phi'] [
                     int pc = ir_parse_count_text c
                     incoming = ir_sccp_phi_state code, starts, record_count, next_states, next_exec, e, pc
