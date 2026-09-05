@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/lith.svg" width="180" alt="Lith logo">
+</p>
+
 # Lith
 
 Lith is an experimental **zero-shift programming language** built around ergonomic 10-finger typing. Structural syntax avoids shifted punctuation where possible: blocks use `[` and `]`, strings use single quotes, and operators are words such as `add`, `sub`, `eq`, `lt`, `and`, and `or`.
