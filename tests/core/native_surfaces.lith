@@ -74,6 +74,32 @@ fn main [int argc, ptr str argv] int [
     str normalized = path.normalize 'compiler\\src//backend\\llvm'
     if [str.eq normalized, 'compiler/src/backend/llvm' eq 0] [ = 64 ]
 
+    # POSIX directory orchestration is isolated from the generic fs runtime.
+    str workdir = '/tmp/lith-native-dir'
+    str entry = '/tmp/lith-native-dir/entry.txt'
+    fs.remove entry
+    fs.rmdir workdir
+    if [fs.mkdir workdir eq 0] [ = 70 ]
+    if [fs.write_text entry, 'entry' eq 0] [ = 71 ]
+    str names = fs.list workdir
+    if [not names] [ = 72 ]
+    str nl = str.chr 10
+    str expected_names = str.concat 'entry.txt', nl
+    if [str.eq names, expected_names eq 0] [ = 73 ]
+    str before_cwd = fs.cwd []
+    if [not before_cwd] [ = 74 ]
+    if [fs.chdir workdir eq 0] [ = 75 ]
+    str inside_cwd = fs.cwd []
+    if [str.eq inside_cwd, workdir eq 0] [ = 76 ]
+    if [fs.chdir before_cwd eq 0] [ = 77 ]
+    if [fs.remove entry eq 0] [ = 78 ]
+    if [fs.rmdir workdir eq 0] [ = 79 ]
+    sys.free names
+    sys.free nl
+    sys.free expected_names
+    sys.free before_cwd
+    sys.free inside_cwd
+
     str path_env = process.env 'PATH'
     if [not path_env] [ = 30 ]
     int status = process.run 'true'
