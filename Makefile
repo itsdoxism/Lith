@@ -49,8 +49,9 @@ SELF_SRC := $(BUILD)/lithc.lith
 SELF_LITHC := $(BUILD)/lithc
 LITH_DRIVER := $(BUILD)/lith-driver
 LITH_BUILD := $(BUILD)/lith-build
+LITH_SEED_TOOL := $(BUILD)/lith-seed
 
-.PHONY: all compiler native-rebuild driver-check native-surfaces-check semantic-check core-check backend-boundary-check ir-middle-end-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
+.PHONY: all compiler native-rebuild seed-export driver-check native-surfaces-check semantic-check core-check backend-boundary-check ir-middle-end-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
 
 all: compiler
 
@@ -78,8 +79,11 @@ $(LITH_DRIVER): tools/lith_driver.lith $(SELF_LITHC)
 $(LITH_BUILD): tools/lith_build.lith $(SELF_LITHC) $(LITH_DRIVER)
 	bin/lith tools/lith_build.lith -o $@
 
-compiler: $(SELF_LITHC) $(LITH_DRIVER) $(LITH_BUILD)
-	chmod +x bin/lith bin/lithc bin/luna bin/lunac $(LITH_DRIVER) $(LITH_BUILD) 2>/dev/null || true
+$(LITH_SEED_TOOL): tools/lith_seed.lith $(SELF_LITHC) $(LITH_DRIVER)
+	bin/lith tools/lith_seed.lith -o $@
+
+compiler: $(SELF_LITHC) $(LITH_DRIVER) $(LITH_BUILD) $(LITH_SEED_TOOL)
+	chmod +x bin/lith bin/lithc bin/luna bin/lunac $(LITH_DRIVER) $(LITH_BUILD) $(LITH_SEED_TOOL) 2>/dev/null || true
 	@echo 'Self-hosted Lith compiler: $(SELF_LITHC)'
 	@echo 'Lith-native driver: $(LITH_DRIVER)'
 	@echo 'Lith-native build orchestrator: $(LITH_BUILD)'
@@ -88,6 +92,11 @@ compiler: $(SELF_LITHC) $(LITH_DRIVER) $(LITH_BUILD)
 # is the trusted seed, so this path does not invoke the Python bootstrap.
 native-rebuild: compiler
 	LITH_SEED=$(SELF_LITHC) CLANG=$(CLANG) PYTHON=$(PYTHON) $(LITH_BUILD)
+
+# Export a checked-in bootstrap candidate only after native rebuild/self-host
+# equality has produced stage2/stage3/stage4 IR files.
+seed-export: native-rebuild $(LITH_SEED_TOOL)
+	$(LITH_SEED_TOOL)
 
 $(BUILD)/reference.c: examples/reference.lith $(BOOTSTRAP_C) $(RUNTIME_H) | $(BUILD)
 	$(PYTHON) $(BOOTSTRAP_C) $< $@
