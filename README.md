@@ -4,76 +4,59 @@
 
 # Lith
 
-Lith is an experimental **zero-shift programming language** built around ergonomic 10-finger typing. Structural syntax avoids shifted punctuation where possible: blocks use `[` and `]`, strings use single quotes, and operators are words such as `add`, `sub`, `eq`, `lt`, `and`, and `or`.
+Lith is an experimental programming language built around one simple idea: make code comfortable to type without constantly reaching for Shift.
 
-> Lith was previously named **Luna**. The public CLI and source extension are now `lith`, `lithc`, and `.lith`. The old `luna`/`lunac` commands remain as temporary compatibility shims.
+Blocks use `[` and `]`, strings use single quotes, and many operators are words instead of symbols:
 
-## Current status
+```lith
+int total = 10 add 20
 
-Lith is self-hosting and its native path is:
-
-```text
-Lith source -> self-hosted Lith compiler -> LLVM IR -> native binary
+if [total gt 20] [
+    io.print 'hello from Lith'
+]
 ```
 
-C is not an intermediate in the normal LLVM path. The old C bootstrap remains only as a regression/recovery path.
+Lith is self-hosting. The compiler is written in Lith and produces LLVM IR, which is then turned into a native binary with Clang.
 
-The self-hosted compiler currently covers the executable reference surface plus:
-
-- typed pointers and pointer indexing
-- `sys.alloc`, `sys.realloc`, and `sys.free`
-- structs and member loads/stores
-- return-value `match / is / else`
-- `io.print` interpolation
-- array literals such as `arr values = [1, 2, 3]`
-- array indexing and assignment
-- `loop item in values` with `break` / `continue`
-
-The compiler source is split into ordered Lith modules under `compiler/src/` and concatenated deterministically for bootstrap/self-hosting.
+```text
+Lith source -> Lith compiler -> LLVM IR -> native binary
+```
 
 ## Build
 
-Requirements:
+You need Clang/LLVM and a trusted Lith compiler seed.
 
-- Python 3.10+ for the initial trusted bootstrap from a clean checkout
-- Clang with LLVM IR support
-
-```sh
-make compiler
-```
-
-This produces:
+The default seed location is:
 
 ```text
-build/lithc
+bootstrap/seed/lithc-linux-x86_64
 ```
 
-After that, ordinary Lith compilation does not need Python.
+You can also provide one explicitly:
 
-## Compile Lith programs
+```sh
+LITH_SEED=/path/to/lithc make compiler
+```
+
+Once built, the compiler and native driver are available under `build/`.
+
+## Compile a program
 
 ```sh
 ./bin/lith hello.lith -o hello
 ./hello
 ```
 
-Emit LLVM IR:
+Emit LLVM IR instead:
 
 ```sh
 ./bin/lith hello.lith --emit-llvm hello.ll
 ```
 
-Use the compiler frontend directly:
+Or use the compiler frontend directly:
 
 ```sh
 ./bin/lithc hello.lith hello.ll
-```
-
-The old commands still forward to the new names during migration:
-
-```sh
-./bin/luna  # deprecated -> lith
-./bin/lunac # deprecated -> lithc
 ```
 
 ## Example
@@ -90,35 +73,25 @@ loop item in values [
 ## Tests
 
 ```sh
-make driver-check
-make reference-selfhost
-make llvm-selfhost
 make test
 ```
 
-`make test` also runs the older C bootstrap regression path.
+There are also smaller targets for the compiler pipeline, native driver, language semantics, and runtime surfaces if you only want to check one area while working on Lith.
 
-## Repository layout
+## Repository
 
 ```text
-bin/lith                     Lith source -> native driver
-bin/lithc                    native self-hosted compiler launcher
-compiler/src/*.lith          current self-hosted compiler source modules
-compiler/lunac_llvm.py       trusted Python LLVM bootstrap backend (legacy internal name)
-compiler/lunac.py            trusted C bootstrap backend (legacy internal name)
-runtime/luna_runtime.ll      current runtime ABI (legacy internal name)
-examples/reference.lith      executable language reference
-tests/*.lith                 language/runtime fixtures
+compiler/src/        self-hosted compiler
+runtime/             LLVM runtime modules
+bin/lith             Lith command-line launcher
+bin/lithc            compiler launcher
+tools/               Lith-native build and tooling programs
+tests/               compiler and language tests
+examples/            example Lith programs
+editors/vscode/      VS Code grammar and Lith Obsidian theme
+assets/              project artwork
 ```
 
-The remaining `luna`/`lunac` names are internal bootstrap/compatibility names and can be retired separately after the public migration is stable.
+Lith was previously called Luna, so a few compatibility names still exist internally while the migration is being finished.
 
-## Next milestones
-
-1. finish semantic diagnostics and type errors,
-2. expand arrays and `match` beyond the current self-hosted surface,
-3. grow the standard library/runtime,
-4. reduce Python further toward recovery/bootstrap-only status,
-5. optionally add direct object-code or machine-code generation later.
-
-See `docs/LANGUAGE.md` and `docs/SELF_HOSTING.md` for details.
+More details are in `docs/LANGUAGE.md`, `docs/ARCHITECTURE.md`, and `docs/SELF_HOSTING.md`.
