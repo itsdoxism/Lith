@@ -47,6 +47,7 @@ SELF_MODULES := \
 	compiler/src/80_emitter_main.lith
 SELF_SRC := $(BUILD)/lithc.lith
 SELF_LITHC := $(BUILD)/lithc
+LITH_DRIVER := $(BUILD)/lith-driver
 
 .PHONY: all compiler driver-check native-surfaces-check semantic-check core-check backend-boundary-check ir-middle-end-check reference-selfhost test selfhost llvm llvm-check llvm-selfhost clean
 
@@ -70,9 +71,13 @@ $(BUILD)/lithc-stage2.ll: $(SELF_SRC) $(BUILD)/lithc-stage1
 $(SELF_LITHC): $(BUILD)/lithc-stage2.ll $(LLVM_RUNTIME)
 	$(CLANG) -Wno-override-module -O2 $< $(LLVM_RUNTIME) -o $@
 
-compiler: $(SELF_LITHC)
-	chmod +x bin/lith bin/lithc bin/luna bin/lunac 2>/dev/null || true
+$(LITH_DRIVER): tools/lith_driver.lith $(SELF_LITHC)
+	sh bin/lith tools/lith_driver.lith -o $@
+
+compiler: $(SELF_LITHC) $(LITH_DRIVER)
+	chmod +x bin/lith bin/lithc bin/luna bin/lunac $(LITH_DRIVER) 2>/dev/null || true
 	@echo 'Self-hosted Lith compiler: $(SELF_LITHC)'
+	@echo 'Lith-native driver: $(LITH_DRIVER)'
 
 $(BUILD)/reference.c: examples/reference.lith $(BOOTSTRAP_C) $(RUNTIME_H) | $(BUILD)
 	$(PYTHON) $(BOOTSTRAP_C) $< $@
@@ -99,15 +104,15 @@ llvm-selfhost: $(SELF_SRC)
 	PYTHON=$(PYTHON) CLANG=$(CLANG) BUILD=$(BUILD)/llvm-selfhost LLVM_LUNAC=$(BOOTSTRAP_LLVM) LLVM_RUNTIME=$(LLVM_RUNTIME) SELF_SRC=$(SELF_SRC) sh tests/llvm_self_host.sh
 
 driver-check: compiler
-	sh bin/lith tests/selfhost_memory.lith -o $(BUILD)/driver-memory
+	bin/lith tests/selfhost_memory.lith -o $(BUILD)/driver-memory
 	$(BUILD)/driver-memory
-	sh bin/lith tests/selfhost_structs.lith -o $(BUILD)/driver-structs
+	bin/lith tests/selfhost_structs.lith -o $(BUILD)/driver-structs
 	$(BUILD)/driver-structs
-	sh bin/lith tests/selfhost_arrays.lith -o $(BUILD)/driver-arrays
+	bin/lith tests/selfhost_arrays.lith -o $(BUILD)/driver-arrays
 	$(BUILD)/driver-arrays
-	sh bin/lith tests/selfhost_operators.lith -o $(BUILD)/driver-operators
+	bin/lith tests/selfhost_operators.lith -o $(BUILD)/driver-operators
 	$(BUILD)/driver-operators
-	@echo 'Native Lith driver + memory + struct + array + operator parity: passed'
+	@echo 'Lith-native driver + memory + struct + array + operator parity: passed'
 
 native-surfaces-check: compiler
 	bin/lith tools/native_surfaces_runner.lith -o $(BUILD)/native-surfaces-runner
