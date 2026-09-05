@@ -3,10 +3,16 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 COMPILER="$ROOT/build/lithc"
+BUILDER="$ROOT/build/lith-build"
 
 if [ ! -x "$COMPILER" ]; then
-  echo 'Lith compiler is not bootstrapped yet; building it once...' >&2
-  make -C "$ROOT" compiler
+  if [ -x "$BUILDER" ]; then
+    echo 'Lith compiler missing; rebuilding with Lith-native builder...' >&2
+    (cd "$ROOT" && "$BUILDER")
+  else
+    echo 'Lith compiler is not bootstrapped yet; building it once...' >&2
+    make -C "$ROOT" compiler
+  fi
 fi
 
 exec "$COMPILER" "$@"
