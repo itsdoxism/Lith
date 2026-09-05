@@ -9,6 +9,7 @@ fn main [int argc, ptr str argv] int [
     str path = '/tmp/lith-native-surfaces.txt'
     int wrote = fs.write_text path, 'Lith bytes'
     if [wrote eq 0] [ = 10 ]
+    if [fs.exists path eq 0] [ = 17 ]
 
     str text = fs.read_text path
     if [not text] [ = 11 ]
@@ -42,6 +43,7 @@ fn main [int argc, ptr str argv] int [
     # Binary filesystem I/O must round-trip embedded NUL bytes unchanged.
     str binary_path = '/tmp/lith-native-surfaces.bin'
     if [fs.write_bytes binary_path, binary eq 0] [ = 40 ]
+    if [fs.exists binary_path eq 0] [ = 47 ]
     bytes loaded = fs.read_bytes binary_path
     if [not loaded] [ = 41 ]
     if [bytes.len loaded ne 3] [ = 42 ]
@@ -49,6 +51,15 @@ fn main [int argc, ptr str argv] int [
     if [bytes.at loaded, 1 ne 0] [ = 44 ]
     if [bytes.at loaded, 2 ne 66] [ = 45 ]
     if [bytes.eq loaded, binary eq 0] [ = 46 ]
+
+    str renamed_path = '/tmp/lith-native-surfaces-renamed.bin'
+    if [fs.rename binary_path, renamed_path eq 0] [ = 48 ]
+    if [fs.exists binary_path] [ = 49 ]
+    if [fs.exists renamed_path eq 0] [ = 50 ]
+    if [fs.remove renamed_path eq 0] [ = 51 ]
+    if [fs.exists renamed_path] [ = 52 ]
+    if [fs.remove path eq 0] [ = 53 ]
+    if [fs.exists path] [ = 54 ]
 
     str path_env = process.env 'PATH'
     if [not path_env] [ = 30 ]
