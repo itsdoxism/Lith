@@ -1,9 +1,9 @@
 # Phi-safe CFG threading and block merging.
 #
-# A block B may be merged into predecessor A only when A ends in an
-# unconditional branch to B and B has exactly one predecessor. The branch and
-# B label disappear; phi predecessor labels on B's outgoing edges are rewritten
-# from B to A so SSA edge semantics remain valid.
+# A block B may be merged into predecessor A only when A has exactly one
+# successor, B has exactly one predecessor, and B is physically adjacent to A.
+# This makes removing B's label equivalent to preserving the existing fallthrough.
+# Phi predecessor labels on B's outgoing edges are rewritten from B to A.
 
 fn ir_cfg_block_pred_count [ptr int edges, int block_count, int block] int [
     int count = 0
@@ -25,6 +25,20 @@ fn ir_cfg_block_succ_count [ptr int edges, int block_count, int block] int [
         succ = succ add 1
     ]
     = count
+]
+
+fn ir_cfg_block_only_successor [ptr int edges, int block_count, int block] int [
+    int found = 0 sub 1
+    int succ = 0
+    while [succ lt block_count] [
+        int slot = ir_dom_slot block, succ, block_count
+        if [edges[slot]] [
+            if [found ge 0] [ = 0 sub 1 ]
+            found = succ
+        ]
+        succ = succ add 1
+    ]
+    = found
 ]
 
 fn ir_cfg_block_start_record [str code, ptr int starts, int record_count, int wanted] int [
@@ -65,36 +79,19 @@ fn ir_cfg_block_end_record [str code, ptr int starts, int record_count, int want
     = last
 ]
 
-fn ir_cfg_block_branch_target [str code, ptr int starts, int record_count, int block] str [
-    int end = ir_cfg_block_end_record code, starts, record_count, block
-    if [end lt 0] [ = '' ]
-    str op = ir_index_field code, starts, end, 0
-    if [not str.eq op, 'branch'] [
-        sys.free op
-        = ''
-    ]
-    str target = ir_index_field code, starts, end, 1
-    sys.free op
-    = target
-]
-
 fn ir_cfg_find_merge_source [str code, ptr int starts, int record_count, ptr int edges, int block_count] int [
     int block = 0
     while [block lt block_count] [
         int succs = ir_cfg_block_succ_count edges, block_count, block
         if [succs eq 1] [
-            str target_label = ir_cfg_block_branch_target code, starts, record_count, block
-            if [not str.eq target_label, ''] [
-                int target = ir_dom_block_for_label code, starts, record_count, target_label
-                if [target gt 0 and target ne block] [
-                    int preds = ir_cfg_block_pred_count edges, block_count, target
-                    if [preds eq 1] [
-                        sys.free target_label
-                        = block
-                    ]
-                ]
+            int target = ir_cfg_block_only_successor edges, block_count, block
+            if [target gt 0 and target ne block] [
+                int preds = ir_cfg_block_pred_count edges, block_count, target
+                int source_end = ir_cfg_block_end_record code, starts, record_count, block
+                int target_start = ir_cfg_block_start_record code, starts, record_count, target
+                int adjacent = source_end add 1
+                if [preds eq 1 and target_start eq adjacent] [ = block ]
             ]
-            sys.free target_label
         ]
         block = block add 1
     ]
@@ -139,9 +136,9 @@ fn ir_cfg_merge_once [str code] str [
         = unchanged
     ]
 
+    int target = ir_cfg_block_only_successor edges, block_count, source
     str source_label = ir_m2r_ssa_label_for_block code, starts, record_count, source
-    str target_label = ir_cfg_block_branch_target code, starts, record_count, source
-    int target = ir_dom_block_for_label code, starts, record_count, target_label
+    str target_label = ir_m2r_ssa_label_for_block code, starts, record_count, target
     int source_end = ir_cfg_block_end_record code, starts, record_count, source
     int target_start = ir_cfg_block_start_record code, starts, record_count, target
     int target_end = ir_cfg_block_end_record code, starts, record_count, target
@@ -171,6 +168,15 @@ fn ir_cfg_merge_once [str code] str [
         p = p add 1
     ]
 
+    int remove_source_end = 0
+    str source_end_op = ir_index_field code, starts, source_end, 0
+    if [str.eq source_end_op, 'branch'] [
+        str source_target = ir_index_field code, starts, source_end, 1
+        if [str.eq source_target, target_label] [ remove_source_end = 1 ]
+        sys.free source_target
+    ]
+    sys.free source_end_op
+
     str out = str.slice '', 0, 0
     int i = 0
     while [i lt record_count and g_fatal_error eq 0] [
@@ -182,7 +188,7 @@ fn ir_cfg_merge_once [str code] str [
         str e = ir_index_field code, starts, i, 5
         int emit = 1
 
-        if [i eq source_end] [ emit = 0 ]
+        if [remove_source_end and i eq source_end] [ emit = 0 ]
         if [i eq target_start] [ emit = 0 ]
         if [i gt target_start and i le target_end and str.eq op, 'phi'] [
             int pc = ir_parse_count_text c
