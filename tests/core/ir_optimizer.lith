@@ -35,6 +35,22 @@ fn promoted_loop [int limit] int [
     = sum
 ]
 
+fn sccp_join_constant [int input] int [
+    int value = 0
+    if [input eq 0] [
+        value = 7
+    ]
+    else [
+        value = 7
+    ]
+    if [value eq 7] [
+        = 11
+    ]
+    else [
+        = 99
+    ]
+]
+
 fn main [] int [
     int folded = 2 add 3
     if [1 eq 1] [
