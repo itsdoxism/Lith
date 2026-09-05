@@ -27,6 +27,8 @@ SELF_MODULES := \
 	compiler/src/32_ir_mem2reg_multi.lith \
 	compiler/src/33_ir_mem2reg_loop.lith \
 	compiler/src/34_ir_sccp.lith \
+	compiler/src/35_ir_sccp_edges.lith \
+	compiler/src/36_ir_cfg_simplify.lith \
 	compiler/src/backend/llvm/25_core.lith \
 	compiler/src/backend/llvm/26_ops.lith \
 	compiler/src/backend/llvm/27_lower.lith \
