@@ -1,0 +1,2 @@
+# Temporary GitHub Linguist override until Lith has official language support.
+*.lith linguist-language=Rust
