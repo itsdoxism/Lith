@@ -1,0 +1,51 @@
+use fs
+use bytes
+
+fn same_file [str left_path, str right_path] int [
+    bytes left = fs.read_bytes left_path
+    if [not left] [ = 0 ]
+    bytes right = fs.read_bytes right_path
+    if [not right] [
+        bytes.free left
+        = 0
+    ]
+    int same = bytes.eq left, right
+    bytes.free left
+    bytes.free right
+    = same
+]
+
+fn main [int argc, ptr str argv] int [
+    if [same_file 'build/lithc-stage2.ll', 'build/lithc-stage3.ll' eq 0] [
+        print 'seed export refused: stage2 != stage3'
+        = 10
+    ]
+    if [same_file 'build/lithc-stage3.ll', 'build/lithc-stage4.ll' eq 0] [
+        print 'seed export refused: stage3 != stage4'
+        = 11
+    ]
+
+    bytes compiler = fs.read_bytes 'build/lithc'
+    if [not compiler] [
+        print 'seed export refused: build/lithc is missing'
+        = 12
+    ]
+
+    fs.mkdir 'bootstrap'
+    fs.mkdir 'bootstrap/seed'
+    if [fs.write_bytes 'bootstrap/seed/lithc-linux-x86_64', compiler eq 0] [
+        bytes.free compiler
+        print 'seed export failed: cannot write bootstrap seed'
+        = 13
+    ]
+    bytes.free compiler
+
+    str manifest = 'Lith trusted seed\nplatform=linux-x86_64\nverification=stage2==stage3==stage4 byte-for-byte\nsource=build/lithc\n'
+    if [fs.write_text 'bootstrap/seed/manifest.txt', manifest eq 0] [
+        print 'seed export failed: cannot write manifest'
+        = 14
+    ]
+
+    print 'Lith trusted seed exported: bootstrap/seed/lithc-linux-x86_64'
+    = 0
+]
