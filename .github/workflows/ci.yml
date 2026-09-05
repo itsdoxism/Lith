@@ -12,5 +12,33 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Build and test Luna
+      - name: Build and test Lith
         run: make test
+
+  verified-seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build self-hosted compiler
+        run: make compiler
+      - name: Verify native rebuild
+        run: make native-rebuild
+      - name: Export verified seed
+        run: make seed-export
+      - name: Record seed SHA-256
+        run: |
+          cd bootstrap/seed
+          sha256sum lithc-linux-x86_64 > SHA256SUMS
+      - name: Upload verified seed artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lith-seed-linux-x86_64-${{ github.sha }}
+          path: |
+            bootstrap/seed/lithc-linux-x86_64
+            bootstrap/seed/manifest.txt
+            bootstrap/seed/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
