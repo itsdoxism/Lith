@@ -101,6 +101,21 @@ if [ "$LOOP_PHI_COUNT" -lt 2 ]; then
     exit 1
 fi
 
+# This constant only becomes visible after mem2reg merges the two branch-local
+# stores. SCCP must fold the post-join compare and CFG pruning must remove the
+# false return path.
+SCCP_BODY="$BUILD/sccp_join_constant.ll"
+sed -n '/^define i32 @sccp_join_constant/,/^}/p' "$IR" > "$SCCP_BODY"
+grep -q 'ret i32 11' "$SCCP_BODY"
+if grep -q 'ret i32 99' "$SCCP_BODY"; then
+    echo 'SCCP/CFG cleanup left dead constant false branch' >&2
+    exit 1
+fi
+if grep -q 'icmp .* i32 7, 7' "$SCCP_BODY"; then
+    echo 'SCCP failed to fold post-mem2reg constant comparison' >&2
+    exit 1
+fi
+
 MAIN_BODY="$BUILD/main.ll"
 sed -n '/^define i32 @main/,/^}/p' "$IR" > "$MAIN_BODY"
 if grep -q 'call i32 @local_load' "$MAIN_BODY"; then
@@ -162,6 +177,8 @@ grep -q 'phi uses undefined temporary value' compiler/src/29_ir_ssa_validate.lit
 grep -q 'compiler/src/29_ir_ssa_validate.lith' Makefile
 grep -q 'ir_validate_ssa_dominance code' compiler/src/30_ir_mem2reg.lith
 grep -q 'ir_validate_ssa_dominance multi' compiler/src/30_ir_mem2reg.lith
+grep -q 'ir_sccp_optimize multi' compiler/src/30_ir_mem2reg.lith
+grep -q 'ir_cfg_prune_unreachable sccp' compiler/src/30_ir_mem2reg.lith
 grep -q 'fn ir_mem2reg_single_block' compiler/src/30_ir_mem2reg.lith
 grep -q 'fn ir_mem2reg_multi_block_plan' compiler/src/31_ir_mem2reg_ssa.lith
 grep -q 'fn ir_m2r_ssa_place_phis' compiler/src/31_ir_mem2reg_ssa.lith
@@ -173,5 +190,10 @@ grep -q 'fn ir_m2r_loop_assign_phi_temps' compiler/src/33_ir_mem2reg_loop.lith
 grep -q 'fn ir_m2r_loop_emit_phis_for_block' compiler/src/33_ir_mem2reg_loop.lith
 grep -q 'loop mem2reg phi predecessor has no current value' compiler/src/33_ir_mem2reg_loop.lith
 grep -q 'compiler/src/33_ir_mem2reg_loop.lith' Makefile
+grep -q 'fn ir_sccp_merge_state' compiler/src/34_ir_sccp.lith
+grep -q 'fn ir_sccp_phi_state' compiler/src/34_ir_sccp.lith
+grep -q 'fn ir_sccp_sweep' compiler/src/34_ir_sccp.lith
+grep -q 'fn ir_sccp_optimize' compiler/src/34_ir_sccp.lith
+grep -q 'compiler/src/34_ir_sccp.lith' Makefile
 
-echo 'Lith IR validator + verified optimizer/CFG/mem2reg pipeline: passed'
+echo 'Lith IR validator + verified optimizer/CFG/mem2reg/SCCP pipeline: passed'
