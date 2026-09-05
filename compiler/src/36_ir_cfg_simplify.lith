@@ -1,14 +1,15 @@
 # Conservative CFG simplification after SCCP.
 #
 # The local cleanup stage removes transformations that preserve the same
-# logical CFG edge, then chains phi-safe branch threading, block merging and
-# dominator-aware GVN/CSE:
+# logical CFG edge, then chains phi-safe branch threading, block merging,
+# dominator-aware GVN/CSE and conservative LICM:
 #   * cbranch X, L, L -> branch L
 #   * branch L immediately followed by label L -> fallthrough
 #   * single-input phi -> value alias
 #   * empty trampoline branch threading when the destination has no phi
 #   * single-predecessor block merging with outgoing phi predecessor rewrite
 #   * duplicate pure SSA expressions -> dominating canonical value
+#   * non-trapping loop-invariant SSA expressions -> unique preheader
 
 fn ir_cfg_simplify_collect_phi_aliases [str code, ptr int starts, int record_count] str [
     str aliases = ''
@@ -119,5 +120,9 @@ fn ir_cfg_simplify [str code] str [
 
     str gvn = ir_gvn_optimize merged
     sys.free merged
-    = gvn
+    if [str.eq gvn, ''] [ = '' ]
+
+    str licm = ir_licm_optimize gvn
+    sys.free gvn
+    = licm
 ]
