@@ -16,7 +16,7 @@ declare i32 @lith_bytes_len(ptr)
 declare ptr @lith_bytes_ptr(ptr)
 declare i32 @lith_bytes_free(ptr)
 
-define ptr @lith_fs_read_bytes(ptr %path) {
+define ptr @fs.read_bytes(ptr %path) {
 entry:
   %mode = getelementptr inbounds [3 x i8], ptr @.lith.fs.rb, i64 0, i64 0
   %f = call ptr @fopen(ptr %path, ptr %mode)
@@ -58,7 +58,7 @@ fail:
   ret ptr null
 }
 
-define i32 @lith_fs_write_bytes(ptr %path, ptr %bytes) {
+define i32 @fs.write_bytes(ptr %path, ptr %bytes) {
 entry:
   %null = icmp eq ptr %bytes, null
   br i1 %null, label %fail, label %open
