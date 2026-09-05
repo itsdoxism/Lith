@@ -5,6 +5,7 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 CLANG=${CLANG:-clang}
 RUNTIME="$ROOT/runtime/luna_runtime.ll"
 BYTES_RUNTIME="$ROOT/runtime/lith_bytes.ll"
+FS_RUNTIME="$ROOT/runtime/lith_fs.ll"
 
 usage() {
   echo "usage: $0 input.lith [-o output] [--emit-llvm path] [-O0|-O1|-O2|-O3|--release] [--native]" >&2
@@ -62,7 +63,7 @@ trap 'rm -f "$TMP"' EXIT HUP INT TERM
 
 "$ROOT/bin/lithc" "$INPUT" "$TMP"
 if [ -n "$NATIVE" ]; then
-  "$CLANG" -Wno-override-module "$OPT" "$NATIVE" "$TMP" "$RUNTIME" "$BYTES_RUNTIME" -o "$OUTPUT"
+  "$CLANG" -Wno-override-module "$OPT" "$NATIVE" "$TMP" "$RUNTIME" "$BYTES_RUNTIME" "$FS_RUNTIME" -o "$OUTPUT"
 else
-  "$CLANG" -Wno-override-module "$OPT" "$TMP" "$RUNTIME" "$BYTES_RUNTIME" -o "$OUTPUT"
+  "$CLANG" -Wno-override-module "$OPT" "$TMP" "$RUNTIME" "$BYTES_RUNTIME" "$FS_RUNTIME" -o "$OUTPUT"
 fi
