@@ -5,6 +5,7 @@
 @.lith.process.nl = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
 
 declare i32 @fork()
+declare i32 @getpid()
 declare i32 @execvp(ptr, ptr)
 declare i32 @waitpid(i32, ptr, i32)
 declare void @_exit(i32)
@@ -13,6 +14,12 @@ declare ptr @malloc(i64)
 declare ptr @realloc(ptr, i64)
 declare void @free(ptr)
 declare ptr @memcpy(ptr, ptr, i64)
+
+define i32 @process.pid() {
+entry:
+  %pid = call i32 @getpid()
+  ret i32 %pid
+}
 
 define internal ptr @lith_process_dup(ptr %s) {
 entry:
