@@ -65,6 +65,28 @@ if grep -q ' store ' "$PROMOTED_BODY"; then
     exit 1
 fi
 
+# Multi-block mem2reg should promote a scalar local through a dynamic diamond.
+# The two branch definitions meet at a real SSA phi and no stack traffic should
+# remain for the promoted local.
+BRANCH_BODY="$BUILD/promoted_branch.ll"
+sed -n '/^define i32 @promoted_branch/,/^}/p' "$IR" > "$BRANCH_BODY"
+if grep -q ' alloca ' "$BRANCH_BODY"; then
+    echo 'multi-block mem2reg left promotable alloca' >&2
+    exit 1
+fi
+if grep -q ' load ' "$BRANCH_BODY"; then
+    echo 'multi-block mem2reg left promotable load' >&2
+    exit 1
+fi
+if grep -q ' store ' "$BRANCH_BODY"; then
+    echo 'multi-block mem2reg left promotable store' >&2
+    exit 1
+fi
+if ! grep -q ' phi i32 ' "$BRANCH_BODY"; then
+    echo 'multi-block mem2reg failed to emit join phi' >&2
+    exit 1
+fi
+
 # CFG v1 is label-name agnostic: after the constant cbranch becomes an
 # unconditional branch, the ordinary if.else block is unreachable and must be
 # removed even though it is not a compiler-generated dead.* block.
@@ -132,6 +154,13 @@ grep -q 'fn ir_ud_collect_defs' compiler/src/29_ir_use_def.lith
 grep -q 'fn ir_ud_collect_uses' compiler/src/29_ir_use_def.lith
 grep -q 'fn ir_m2r_collect_slots' compiler/src/30_ir_mem2reg.lith
 grep -q 'fn ir_m2r_collect_unsafe' compiler/src/30_ir_mem2reg.lith
+grep -q 'ir_mem2reg_multi_block out' compiler/src/30_ir_mem2reg.lith
 grep -q 'fn ir_mem2reg_single_block' compiler/src/30_ir_mem2reg.lith
+grep -q 'fn ir_mem2reg_multi_block_plan' compiler/src/31_ir_mem2reg_ssa.lith
+grep -q 'fn ir_m2r_ssa_place_phis' compiler/src/31_ir_mem2reg_ssa.lith
+grep -q 'fn ir_m2r_ssa_has_backedge' compiler/src/31_ir_mem2reg_ssa.lith
+grep -q 'fn ir_mem2reg_multi_block' compiler/src/32_ir_mem2reg_multi.lith
+grep -q 'multi-block mem2reg missing planned phi' compiler/src/32_ir_mem2reg_multi.lith
+grep -q 'multi-block mem2reg predecessor has no current value' compiler/src/32_ir_mem2reg_multi.lith
 
 echo 'Lith IR validator + verified optimizer/CFG/mem2reg pipeline: passed'
