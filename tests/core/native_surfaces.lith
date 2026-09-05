@@ -1,6 +1,7 @@
 use fs
 use bytes
 use process
+use path
 
 fn main [int argc, ptr str argv] int [
     if [argc lt 1] [ = 1 ]
@@ -60,6 +61,18 @@ fn main [int argc, ptr str argv] int [
     if [fs.exists renamed_path] [ = 52 ]
     if [fs.remove path eq 0] [ = 53 ]
     if [fs.exists path] [ = 54 ]
+
+    # Lexical path utilities accept either separator and normalize to '/'.
+    str joined_path = path.join 'compiler/src', '30_operators.lith'
+    if [str.eq joined_path, 'compiler/src/30_operators.lith' eq 0] [ = 60 ]
+    str base = path.basename '/tmp/archive.tar.gz'
+    if [str.eq base, 'archive.tar.gz' eq 0] [ = 61 ]
+    str dir = path.dirname '/tmp/archive.tar.gz'
+    if [str.eq dir, '/tmp' eq 0] [ = 62 ]
+    str extension = path.ext '/tmp/archive.tar.gz'
+    if [str.eq extension, '.gz' eq 0] [ = 63 ]
+    str normalized = path.normalize 'compiler\\src//backend\\llvm'
+    if [str.eq normalized, 'compiler/src/backend/llvm' eq 0] [ = 64 ]
 
     str path_env = process.env 'PATH'
     if [not path_env] [ = 30 ]
