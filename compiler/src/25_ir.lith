@@ -475,11 +475,27 @@ fn ir_run_optimization_pipeline [str raw] str [
 
     str cfg = ir_cfg_prune_unreachable next
     sys.free next
+    if [str.eq cfg, ''] [ = '' ]
     if [ir_validate_function cfg eq 0] [
         sys.free cfg
         = ''
     ]
-    = cfg
+
+    str promoted = ir_mem2reg_single_block cfg
+    sys.free cfg
+    if [str.eq promoted, ''] [ = '' ]
+    if [ir_validate_function promoted eq 0] [
+        sys.free promoted
+        = ''
+    ]
+
+    str cleaned = ir_optimize_function_v2 promoted
+    sys.free promoted
+    if [ir_validate_function cleaned eq 0] [
+        sys.free cleaned
+        = ''
+    ]
+    = cleaned
 ]
 
 fn ir_end_function [int unused] int [
