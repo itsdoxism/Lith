@@ -123,6 +123,11 @@ grep -q 'ir_cfg_validate_pruned out' compiler/src/28_ir_cfg.lith
 grep -q 'ir_cfg_has_edge edges, pred, block_label' compiler/src/28_ir_cfg.lith
 grep -q 'fn ir_cfg_prune_unreachable' compiler/src/28_ir_cfg.lith
 grep -q 'fn ir_dom_compute' compiler/src/29_ir_dom.lith
+grep -q 'fn ir_dom_compute_idom' compiler/src/29_ir_dom_tree.lith
+grep -q 'fn ir_dom_build_tree' compiler/src/29_ir_dom_tree.lith
+grep -q 'fn ir_dom_compute_frontier' compiler/src/29_ir_dom_tree.lith
+grep -q 'fn ir_dom_frontier_contains' compiler/src/29_ir_dom_tree.lith
+grep -q 'fn ir_dom_tree_frontier_verify' compiler/src/29_ir_dom_tree.lith
 grep -q 'fn ir_ud_collect_defs' compiler/src/29_ir_use_def.lith
 grep -q 'fn ir_ud_collect_uses' compiler/src/29_ir_use_def.lith
 grep -q 'fn ir_m2r_collect_slots' compiler/src/30_ir_mem2reg.lith
