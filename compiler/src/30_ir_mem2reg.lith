@@ -162,6 +162,10 @@ fn ir_m2r_rewrite_phi [str aliases, str payload, int count] str [
 ]
 
 fn ir_mem2reg_single_block [str code] str [
+    # CFG pruning runs immediately before mem2reg. Validate edge-use SSA rules
+    # here so malformed or non-dominating phi inputs never enter promotion.
+    if [ir_validate_ssa_dominance code eq 0] [ = '' ]
+
     int record_count = ir_index_record_count code
     int index_slots = record_count add 1
     ptr int starts = sys.alloc index_slots
@@ -263,5 +267,10 @@ fn ir_mem2reg_single_block [str code] str [
     # returned unchanged by that stage, so loop behavior remains untouched.
     str multi = ir_mem2reg_multi_block out
     sys.free out
+    if [str.eq multi, ''] [ = '' ]
+    if [ir_validate_ssa_dominance multi eq 0] [
+        sys.free multi
+        = ''
+    ]
     = multi
 ]
