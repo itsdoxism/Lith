@@ -94,10 +94,9 @@ fn ir_cfg_collect_edges [str code, ptr int starts, int record_count] str [
     = edges
 ]
 
-# Phi validation that depends on the concrete CFG. Structural validation checks
-# that predecessor labels exist; this check additionally requires every phi
-# predecessor to have an actual edge into the phi's block and rejects duplicate
-# incoming predecessors.
+# Validate phi semantics against a concrete, already-pruned CFG. Structural
+# validation checks label existence; this check also requires a real predecessor
+# edge and rejects duplicate incoming predecessors.
 fn ir_cfg_validate_phi_edges [str code, ptr int starts, int record_count, str edges] int [
     str block_label = 'entry'
     int i = 0
@@ -141,6 +140,18 @@ fn ir_cfg_validate_phi_edges [str code, ptr int starts, int record_count, str ed
         i = i add 1
     ]
     = g_fatal_error eq 0
+]
+
+fn ir_cfg_validate_pruned [str code] int [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+    str edges = ir_cfg_collect_edges code, starts, record_count
+    int ok = ir_cfg_validate_phi_edges code, starts, record_count, edges
+    sys.free starts
+    sys.free edges
+    = ok
 ]
 
 # Compute the transitive set of blocks reachable from the implicit entry block.
@@ -235,16 +246,11 @@ fn ir_cfg_prune_unreachable [str code] str [
     str reachable = ir_cfg_collect_reachable code, starts, record_count
     str edges = ir_cfg_collect_edges code, starts, record_count
 
-    if [ir_cfg_validate_phi_edges code, starts, record_count, edges eq 0] [
-        sys.free starts
-        = ''
-    ]
-
     str out = str.slice '', 0, 0
     str block_label = 'entry'
     int block_reachable = 1
     int i = 0
-    while [i lt record_count] [
+    while [i lt record_count and g_fatal_error eq 0] [
         str op = ir_index_field code, starts, i, 0
         str a = ir_index_field code, starts, i, 1
 
@@ -281,5 +287,17 @@ fn ir_cfg_prune_unreachable [str code] str [
     ]
 
     sys.free starts
+    sys.free reachable
+    sys.free edges
+
+    if [g_fatal_error] [
+        sys.free out
+        = ''
+    ]
+    int phi_ok = ir_cfg_validate_pruned out
+    if [phi_ok eq 0] [
+        sys.free out
+        = ''
+    ]
     = out
 ]
