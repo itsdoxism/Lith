@@ -1,5 +1,5 @@
-; Lith binary filesystem runtime.
-; Reads/writes the length-prefixed `bytes` object used by runtime/lith_bytes.ll.
+; Lith filesystem runtime.
+; Binary I/O plus basic filesystem management for Lith-native tooling.
 
 @.lith.fs.rb = private unnamed_addr constant [3 x i8] c"\72\62\00", align 1
 @.lith.fs.wb = private unnamed_addr constant [3 x i8] c"\77\62\00", align 1
@@ -11,6 +11,8 @@ declare void @rewind(ptr)
 declare i64 @fread(ptr, i64, i64, ptr)
 declare i64 @fwrite(ptr, i64, i64, ptr)
 declare i32 @fclose(ptr)
+declare i32 @remove(ptr)
+declare i32 @rename(ptr, ptr)
 declare ptr @lith_bytes_alloc(i32)
 declare i32 @lith_bytes_len(ptr)
 declare ptr @lith_bytes_ptr(ptr)
@@ -80,4 +82,33 @@ write:
   ret i32 %out
 fail:
   ret i32 0
+}
+
+define i32 @fs.exists(ptr %path) {
+entry:
+  %mode = getelementptr inbounds [3 x i8], ptr @.lith.fs.rb, i64 0, i64 0
+  %f = call ptr @fopen(ptr %path, ptr %mode)
+  %missing = icmp eq ptr %f, null
+  br i1 %missing, label %no, label %yes
+yes:
+  %closed = call i32 @fclose(ptr %f)
+  ret i32 1
+no:
+  ret i32 0
+}
+
+define i32 @fs.remove(ptr %path) {
+entry:
+  %status = call i32 @remove(ptr %path)
+  %ok = icmp eq i32 %status, 0
+  %out = zext i1 %ok to i32
+  ret i32 %out
+}
+
+define i32 @fs.rename(ptr %from, ptr %to) {
+entry:
+  %status = call i32 @rename(ptr %from, ptr %to)
+  %ok = icmp eq i32 %status, 0
+  %out = zext i1 %ok to i32
+  ret i32 %out
 }
