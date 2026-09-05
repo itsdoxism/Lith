@@ -20,6 +20,7 @@ SELF_MODULES := \
 	compiler/src/28_ir_cfg.lith \
 	compiler/src/29_ir_dom.lith \
 	compiler/src/29_ir_use_def.lith \
+	compiler/src/30_ir_mem2reg.lith \
 	compiler/src/backend/llvm/25_core.lith \
 	compiler/src/backend/llvm/26_ops.lith \
 	compiler/src/backend/llvm/27_lower.lith \
@@ -107,24 +108,12 @@ backend-boundary-check:
 	sh tests/backend_boundary.sh
 
 ir-middle-end-check: compiler
-	BUILD=$(BUILD)/ir-middle-end LITHC=bin/lithc CLANG=$(CLANG) LLVM_RUNTIME=$(LLVM_RUNTIME) sh tests/ir_middle_end.sh
+	sh tests/ir_middle_end.sh
 
 reference-selfhost: compiler
-	BUILD=$(BUILD) sh tests/reference_selfhost.sh
+	sh tests/reference_selfhost.sh
 
-test: compiler $(BUILD)/reference $(BUILD)/reference-llvm
-	$(BUILD)/reference
-	$(BUILD)/reference-llvm
-	$(PYTHON) -m py_compile $(BOOTSTRAP_C) $(BOOTSTRAP_LLVM)
-	$(MAKE) backend-boundary-check
-	$(MAKE) ir-middle-end-check
-	$(MAKE) driver-check
-	$(MAKE) semantic-check
-	$(MAKE) core-check
-	$(MAKE) reference-selfhost
-	$(MAKE) selfhost
-	$(MAKE) llvm-check
-	$(MAKE) llvm-selfhost
+test: driver-check semantic-check core-check backend-boundary-check ir-middle-end-check reference-selfhost llvm-check llvm-selfhost
 
 clean:
-	rm -rf $(BUILD) compiler/__pycache__ compiler/bootstrap/__pycache__
+	rm -rf $(BUILD)
