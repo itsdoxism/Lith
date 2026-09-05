@@ -95,7 +95,7 @@ init:
   br label %loop
 loop:
   %curbuf = phi ptr [%buf, %init], [%nextbuf, %appenddone], [%curbuf, %skip]
-  %curlen = phi i64 [0, %init], [%newlen, %appenddone], [%curlen, %skip]
+  %curlen = phi i64 [0, %init], [%newlen2, %appenddone], [%curlen, %skip]
   %ent = call ptr @readdir(ptr %dir)
   %done = icmp eq ptr %ent, null
   br i1 %done, label %finish, label %name
