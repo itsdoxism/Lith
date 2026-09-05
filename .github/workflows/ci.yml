@@ -8,24 +8,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Build and test Lith
+      - name: Require bundled trusted seed
+        run: |
+          test -f bootstrap/seed/lithc-linux-x86_64 || {
+            echo 'bootstrap/seed/lithc-linux-x86_64 is required'
+            exit 1
+          }
+          chmod +x bootstrap/seed/lithc-linux-x86_64
+      - name: Build and test Lith from trusted seed
         run: make test
-
-  verified-seed:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Build self-hosted compiler
-        run: make compiler
-      - name: Verify native rebuild
+      - name: Verify native self-rebuild
         run: make native-rebuild
-      - name: Export verified seed
+      - name: Export verified seed candidate
         run: make seed-export
       - name: Record seed SHA-256
         run: |
@@ -41,43 +35,3 @@ jobs:
             bootstrap/seed/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
-
-  seed-bootstrap:
-    needs: verified-seed
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download verified seed
-        uses: actions/download-artifact@v4
-        with:
-          name: lith-seed-linux-x86_64-${{ github.sha }}
-          path: bootstrap/seed-ci
-      - name: Verify downloaded seed digest
-        run: |
-          cd bootstrap/seed-ci
-          sha256sum -c SHA256SUMS
-          chmod +x lithc-linux-x86_64
-      - name: Build Lith-native orchestrator from seed
-        run: |
-          mkdir -p build
-          bootstrap/seed-ci/lithc-linux-x86_64 tools/lith_build.lith build/lith-build.ll
-          clang -Wno-override-module -O2 \
-            build/lith-build.ll \
-            runtime/luna_runtime.ll \
-            runtime/lith_bytes.ll \
-            runtime/lith_fs.ll \
-            runtime/lith_fs_posix.ll \
-            runtime/lith_path.ll \
-            runtime/lith_process_posix.ll \
-            -o build/lith-build
-      - name: Fresh rebuild with Python disabled
-        env:
-          LITH_SEED: bootstrap/seed-ci/lithc-linux-x86_64
-          PYTHON: /bin/false
-        run: build/lith-build
-      - name: Smoke test rebuilt compiler and driver
-        run: |
-          test -x build/lithc
-          test -x build/lith-driver
-          build/lith-driver bench/hello.lith -o build/seed-bootstrap-hello
-          build/seed-bootstrap-hello
