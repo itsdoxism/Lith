@@ -2,23 +2,33 @@
 
 This directory is reserved for a verified native Lith compiler seed.
 
-Current canonical seed path for the supported POSIX target:
+Current canonical seed path for the supported Linux target:
 
 - `bootstrap/seed/lithc-linux-x86_64`
 
-The seed must not be created from an arbitrary compiler binary. Export it only from a build where Lith self-host verification has already proven:
+The normal Lith build does not fall back to Python. A clean checkout requires either:
+
+1. an explicit compiler supplied through `LITH_SEED`, or
+2. the bundled trusted seed at the path above.
+
+The seed must not be copied from an arbitrary compiler binary. It is accepted only after self-host verification proves, byte-for-byte:
 
 - `build/lithc-stage2.ll == build/lithc-stage3.ll`
 - `build/lithc-stage3.ll == build/lithc-stage4.ll`
 
-Use `tools/lith_seed.lith` to perform that check and export the compiler binary plus `manifest.txt`.
+`tools/lith_seed.lith` performs the same equality check before exporting a seed from an already trusted native build.
 
-Bootstrap selection order in `tools/lith_build.lith`:
+## Creating the first bundled seed
 
-1. `LITH_SEED` environment variable, when explicitly provided.
-2. `bootstrap/seed/lithc-linux-x86_64`, when present.
-3. Python bootstrap fallback for a clean checkout with no trusted seed.
+`.github/workflows/bootstrap-seed.yml` is a manual, provenance-preserving bootstrap path. It temporarily recovers the historical trusted Python LLVM bootstrap from the pinned commit documented in the workflow, uses it to produce a native compiler, verifies stage equality, and then verifies the resulting seed through a clean `make compiler` and `make test` run.
 
-A checked-in seed therefore removes Python from the normal clean-build path, while keeping Python as a recovery/reference bootstrap.
+The historical Python bootstrap is not restored to the repository or used by the normal build path.
 
-The seed binary itself should only be committed after it has been produced on a known system, self-host equality has passed, and its provenance has been reviewed. Do not fabricate or hand-edit the seed artifact.
+If the workflow passes, it uploads these candidate artifacts for review:
+
+- `lithc-linux-x86_64`
+- `manifest.txt`
+
+The manifest records the current source commit, historical bootstrap commit, verification method, and SHA-256 digest. Review those artifacts before committing the seed into this directory.
+
+Do not fabricate or hand-edit the seed binary or its provenance metadata.
