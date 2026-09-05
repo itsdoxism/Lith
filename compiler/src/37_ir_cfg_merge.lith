@@ -81,7 +81,8 @@ fn ir_cfg_block_branch_target [str code, ptr int starts, int record_count, int b
 fn ir_cfg_find_merge_source [str code, ptr int starts, int record_count, ptr int edges, int block_count] int [
     int block = 0
     while [block lt block_count] [
-        if [ir_cfg_block_succ_count edges, block_count, block eq 1] [
+        int succs = ir_cfg_block_succ_count edges, block_count, block
+        if [succs eq 1] [
             str target_label = ir_cfg_block_branch_target code, starts, record_count, block
             if [not str.eq target_label, ''] [
                 int target = ir_dom_block_for_label code, starts, record_count, target_label
@@ -143,15 +144,12 @@ fn ir_cfg_merge_once [str code] str [
     int target = ir_dom_block_for_label code, starts, record_count, target_label
     int source_end = ir_cfg_block_end_record code, starts, record_count, source
     int target_start = ir_cfg_block_start_record code, starts, record_count, target
+    int target_end = ir_cfg_block_end_record code, starts, record_count, target
 
     str aliases = ''
     int p = target_start add 1
-    while [p lt record_count] [
+    while [p le target_end] [
         str op0 = ir_index_field code, starts, p, 0
-        if [str.eq op0, 'label'] [
-            sys.free op0
-            break
-        ]
         if [str.eq op0, 'phi'] [
             str a0 = ir_index_field code, starts, p, 1
             str c0 = ir_index_field code, starts, p, 3
@@ -186,7 +184,7 @@ fn ir_cfg_merge_once [str code] str [
 
         if [i eq source_end] [ emit = 0 ]
         if [i eq target_start] [ emit = 0 ]
-        if [i gt target_start and str.eq op, 'phi'] [
+        if [i gt target_start and i le target_end and str.eq op, 'phi'] [
             int pc = ir_parse_count_text c
             if [pc eq 1] [ emit = 0 ]
         ]
@@ -249,7 +247,8 @@ fn ir_cfg_thread_target [str code, ptr int starts, int record_count, str target]
     if [block le 0] [ = target ]
     int start = ir_cfg_block_start_record code, starts, record_count, block
     int end = ir_cfg_block_end_record code, starts, record_count, block
-    if [start lt 0 or end lt 0 or end ne start add 1] [ = target ]
+    int expected_end = start add 1
+    if [start lt 0 or end lt 0 or end ne expected_end] [ = target ]
     str op = ir_index_field code, starts, end, 0
     if [not str.eq op, 'branch'] [
         sys.free op
@@ -258,6 +257,11 @@ fn ir_cfg_thread_target [str code, ptr int starts, int record_count, str target]
     str final_target = ir_index_field code, starts, end, 1
     int final_block = ir_dom_block_for_label code, starts, record_count, final_target
     int final_start = ir_cfg_block_start_record code, starts, record_count, final_block
+    if [final_start lt 0] [
+        sys.free op
+        sys.free final_target
+        = target
+    ]
     int next = final_start add 1
     if [next lt record_count] [
         str next_op = ir_index_field code, starts, next, 0
