@@ -40,11 +40,17 @@ fn builtin_ret [str name] str [
     if [str.eq name, 'str.starts'] [ = 'int' ]
     if [str.eq name, 'str.trim'] [ = 'str' ]
     if [str.eq name, 'str.chr'] [ = 'str' ]
+    if [str.eq name, 'bytes.from_str'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.to_str'] [ = 'str' ]
+    if [str.eq name, 'bytes.alloc'] [ = 'bytes' ]
     if [str.eq name, 'bytes.len'] [ = 'int' ]
     if [str.eq name, 'bytes.at'] [ = 'int' ]
-    if [str.eq name, 'bytes.slice'] [ = 'str' ]
-    if [str.eq name, 'bytes.concat'] [ = 'str' ]
+    if [str.eq name, 'bytes.set'] [ = 'int' ]
+    if [str.eq name, 'bytes.slice'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.concat'] [ = 'bytes' ]
     if [str.eq name, 'bytes.eq'] [ = 'int' ]
+    if [str.eq name, 'bytes.ptr'] [ = 'ptr char' ]
+    if [str.eq name, 'bytes.free'] [ = 'int' ]
     if [str.eq name, 'int.str'] [ = 'str' ]
     = map_get g_fn_ret, name
 ]
@@ -64,11 +70,17 @@ fn builtin_argc [str name] int [
     if [str.eq name, 'str.starts'] [ = 2 ]
     if [str.eq name, 'str.trim'] [ = 1 ]
     if [str.eq name, 'str.chr'] [ = 1 ]
+    if [str.eq name, 'bytes.from_str'] [ = 1 ]
+    if [str.eq name, 'bytes.to_str'] [ = 1 ]
+    if [str.eq name, 'bytes.alloc'] [ = 1 ]
     if [str.eq name, 'bytes.len'] [ = 1 ]
     if [str.eq name, 'bytes.at'] [ = 2 ]
+    if [str.eq name, 'bytes.set'] [ = 3 ]
     if [str.eq name, 'bytes.slice'] [ = 3 ]
     if [str.eq name, 'bytes.concat'] [ = 2 ]
     if [str.eq name, 'bytes.eq'] [ = 2 ]
+    if [str.eq name, 'bytes.ptr'] [ = 1 ]
+    if [str.eq name, 'bytes.free'] [ = 1 ]
     if [str.eq name, 'int.str'] [ = 1 ]
     str n = map_get g_fn_argc, name
     if [str.eq n, ''] [ = 0 ]
@@ -102,17 +114,26 @@ fn builtin_param [str name, int index] str [
     if [str.eq name, 'str.starts'] [ = 'str' ]
     if [str.eq name, 'str.trim'] [ = 'str' ]
     if [str.eq name, 'str.chr'] [ = 'int' ]
-    if [str.eq name, 'bytes.len'] [ = 'str' ]
+    if [str.eq name, 'bytes.from_str'] [ = 'str' ]
+    if [str.eq name, 'bytes.to_str'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.alloc'] [ = 'int' ]
+    if [str.eq name, 'bytes.len'] [ = 'bytes' ]
     if [str.eq name, 'bytes.at'] [
-        if [index eq 0] [ = 'str' ]
+        if [index eq 0] [ = 'bytes' ]
+        = 'int'
+    ]
+    if [str.eq name, 'bytes.set'] [
+        if [index eq 0] [ = 'bytes' ]
         = 'int'
     ]
     if [str.eq name, 'bytes.slice'] [
-        if [index eq 0] [ = 'str' ]
+        if [index eq 0] [ = 'bytes' ]
         = 'int'
     ]
-    if [str.eq name, 'bytes.concat'] [ = 'str' ]
-    if [str.eq name, 'bytes.eq'] [ = 'str' ]
+    if [str.eq name, 'bytes.concat'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.eq'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.ptr'] [ = 'bytes' ]
+    if [str.eq name, 'bytes.free'] [ = 'bytes' ]
     if [str.eq name, 'int.str'] [ = 'int' ]
     str key = fn_param_key name, index
     = map_get g_fn_params, key
@@ -124,7 +145,7 @@ fn is_integer_like [str typ] int [
 ]
 
 fn is_pointer_like [str typ] int [
-    if [str.eq typ, 'str' or str.starts typ, 'ptr '] [ = 1 ]
+    if [str.eq typ, 'str' or str.eq typ, 'bytes' or str.starts typ, 'ptr '] [ = 1 ]
     = 0
 ]
 
@@ -188,8 +209,9 @@ fn can_cast [str from, str to] int [
         = 0
     ]
     # `null` has the internal type `ptr any` and is the only pointer value
-    # that implicitly adapts to a concrete pointer/string destination.
+    # that implicitly adapts to a concrete pointer/string/bytes destination.
     if [str.eq to, 'str' and is_null_pointer_type from] [ = 1 ]
+    if [str.eq to, 'bytes' and is_null_pointer_type from] [ = 1 ]
     if [str.starts to, 'ptr ' and is_null_pointer_type from] [ = 1 ]
     = 0
 ]
