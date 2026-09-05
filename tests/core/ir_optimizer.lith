@@ -8,6 +8,12 @@ fn local_load [] int [
     = value
 ]
 
+fn promoted_local [int input] int [
+    int value = input
+    int other = input add 1
+    = value add other
+]
+
 fn main [] int [
     int folded = 2 add 3
     if [1 eq 1] [
