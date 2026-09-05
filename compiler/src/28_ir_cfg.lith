@@ -49,6 +49,7 @@ fn ir_cfg_has_edge [str edges, str from, str to] int [
     str known = map_get edges, key
     int yes = str.eq known, '1'
     sys.free key
+    sys.free known
     = yes
 ]
 
@@ -91,6 +92,55 @@ fn ir_cfg_collect_edges [str code, ptr int starts, int record_count] str [
         i = i add 1
     ]
     = edges
+]
+
+# Phi validation that depends on the concrete CFG. Structural validation checks
+# that predecessor labels exist; this check additionally requires every phi
+# predecessor to have an actual edge into the phi's block and rejects duplicate
+# incoming predecessors.
+fn ir_cfg_validate_phi_edges [str code, ptr int starts, int record_count, str edges] int [
+    str block_label = 'entry'
+    int i = 0
+    while [i lt record_count and g_fatal_error eq 0] [
+        str op = ir_index_field code, starts, i, 0
+        str a = ir_index_field code, starts, i, 1
+
+        if [str.eq op, 'label'] [
+            block_label = str.slice a, 0, str.len a
+        ]
+        if [str.eq op, 'phi'] [
+            str c = ir_index_field code, starts, i, 3
+            str e = ir_index_field code, starts, i, 5
+            int count = ir_parse_count_text c
+            str seen = ''
+            int p = 0
+            while [p lt count and g_fatal_error eq 0] [
+                str pair = ir_list_item e, p
+                str pred = ir_pair_right pair
+                str known = map_get seen, pred
+                if [str.eq known, '1'] [
+                    ir_validation_error 'phi contains duplicate predecessor'
+                ]
+                else [
+                    if [not ir_cfg_has_edge edges, pred, block_label] [
+                        ir_validation_error 'phi predecessor is not a CFG edge'
+                    ]
+                    seen = map_put seen, pred, '1'
+                ]
+                sys.free known
+                sys.free pair
+                sys.free pred
+                p = p add 1
+            ]
+            sys.free c
+            sys.free e
+        ]
+
+        sys.free op
+        sys.free a
+        i = i add 1
+    ]
+    = g_fatal_error eq 0
 ]
 
 # Compute the transitive set of blocks reachable from the implicit entry block.
@@ -184,6 +234,11 @@ fn ir_cfg_prune_unreachable [str code] str [
     ir_index_fill code, record_count, starts
     str reachable = ir_cfg_collect_reachable code, starts, record_count
     str edges = ir_cfg_collect_edges code, starts, record_count
+
+    if [ir_cfg_validate_phi_edges code, starts, record_count, edges eq 0] [
+        sys.free starts
+        = ''
+    ]
 
     str out = str.slice '', 0, 0
     str block_label = 'entry'
