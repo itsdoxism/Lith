@@ -1,0 +1,35 @@
+use fs
+use path
+use process
+
+fn run_checked [str command, int code] int [
+    int status = process.run command
+    if [status ne 0] [
+        print str.concat 'command failed: ', command
+        = code
+    ]
+    = 0
+]
+
+fn main [int argc, ptr str argv] int [
+    str build_root = 'build'
+    str build_dir = path.join build_root, 'native-surfaces'
+
+    # mkdir is intentionally idempotent at the orchestration level: an
+    # existing build directory is fine, so its false return is ignored.
+    fs.mkdir build_root
+    fs.mkdir build_dir
+
+    str output = path.join build_dir, 'native-surfaces'
+    str command = 'bin/lith tests/core/native_surfaces.lith -o '
+    command = str.concat command, output
+
+    int compile_status = run_checked command, 10
+    if [compile_status ne 0] [ = compile_status ]
+
+    int run_status = run_checked output, 20
+    if [run_status ne 0] [ = run_status ]
+
+    print 'Lith text/binary fs + directories + path + bytes + process native surfaces: passed'
+    = 0
+]
