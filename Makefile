@@ -31,6 +31,7 @@ SELF_MODULES := \
 	compiler/src/36_ir_cfg_simplify.lith \
 	compiler/src/37_ir_cfg_merge.lith \
 	compiler/src/38_ir_gvn.lith \
+	compiler/src/39_ir_licm.lith \
 	compiler/src/backend/llvm/25_core.lith \
 	compiler/src/backend/llvm/26_ops.lith \
 	compiler/src/backend/llvm/27_lower.lith \
