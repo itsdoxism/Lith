@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+BUILD=${BUILD:-build/native-surfaces}
+LITH=${LITH:-bin/lith}
+
+mkdir -p "$BUILD"
+OUT="$BUILD/native-surfaces"
+
+sh "$LITH" tests/core/native_surfaces.lith -o "$OUT"
+"$OUT"
+
+echo 'Lith fs + bytes native surfaces: passed'
