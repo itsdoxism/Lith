@@ -1,0 +1,20 @@
+use fs
+use bytes
+
+fn main [int argc, ptr str argv] int [
+    str path = '/tmp/lith-native-surfaces.txt'
+    int wrote = fs.write_text path, 'Lith bytes'
+    if [wrote eq 0] [ = 10 ]
+
+    str text = fs.read_text path
+    if [not text] [ = 11 ]
+    if [bytes.len text ne 10] [ = 12 ]
+    if [bytes.at text, 0 ne 76] [ = 13 ]
+
+    str head = bytes.slice text, 0, 4
+    if [bytes.eq head, 'Lith' eq 0] [ = 14 ]
+
+    str joined = bytes.concat head, ' native'
+    if [bytes.eq joined, 'Lith native' eq 0] [ = 15 ]
+    = 0
+]
