@@ -184,7 +184,7 @@ fn ir_validate_record [str line, str labels, str defs] str [
                 str pair2 = ir_list_item e, p
                 str value2 = ir_pair_left pair2
                 str pred = ir_pair_right pair2
-                ir_require_value defs, value2, 'phi'
+                if [str.eq value2, ''] [ ir_validation_error 'phi incoming value is missing' ]
                 str pred_known = map_get labels, pred
                 if [not str.eq pred_known, '1' and not str.eq pred, 'entry'] [ ir_validation_error 'phi predecessor label is missing' ]
                 sys.free pair2
