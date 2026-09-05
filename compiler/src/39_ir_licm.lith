@@ -1,0 +1,282 @@
+# Conservative natural-loop analysis and loop-invariant code motion.
+#
+# LICM v1 handles one natural loop at a time. A back-edge tail -> header is a
+# natural-loop edge when header dominates tail. Hoisting is allowed only when
+# the loop has one outside predecessor whose terminator is an unconditional
+# branch to the header. Only non-trapping, deterministic SSA operations move;
+# memory, calls, allocation, address calculation, phi and div/mod stay put.
+
+fn ir_licm_candidate [str op, str subop] int [
+    if [str.eq op, 'truthy_int' or str.eq op, 'not_bool' or str.eq op, 'bool_to_int'] [ = 1 ]
+    if [str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [ = 1 ]
+    if [str.eq op, 'logic' or str.eq op, 'compare_int' or str.eq op, 'compare_bool'] [ = 1 ]
+    if [str.eq op, 'arith_int'] [
+        if [str.eq subop, 'add' or str.eq subop, 'sub' or str.eq subop, 'mul'] [ = 1 ]
+    ]
+    = 0
+]
+
+fn ir_licm_find_backedge [ptr int edges, ptr int dom, int block_count, ptr int found] int [
+    int tail = 0
+    while [tail lt block_count] [
+        int header = 0
+        while [header lt block_count] [
+            int slot = ir_dom_slot tail, header, block_count
+            if [edges[slot]] [
+                if [ir_dom_dominates dom, block_count, header, tail] [
+                    found[0] = tail
+                    found[1] = header
+                    = 1
+                ]
+            ]
+            header = header add 1
+        ]
+        tail = tail add 1
+    ]
+    = 0
+]
+
+# Natural loop = header + tail + all predecessors that can reach tail without
+# crossing above the header. Repeated predecessor closure avoids a mutable stack.
+fn ir_licm_build_loop [ptr int edges, int block_count, int tail, int header, ptr int loop] int [
+    int i = 0
+    while [i lt block_count] [ loop[i] = 0 i = i add 1 ]
+    loop[header] = 1
+    loop[tail] = 1
+
+    int pass = 0
+    while [pass lt block_count] [
+        int block = 0
+        while [block lt block_count] [
+            if [loop[block] and block ne header] [
+                int pred = 0
+                while [pred lt block_count] [
+                    int slot = ir_dom_slot pred, block, block_count
+                    if [edges[slot]] [ loop[pred] = 1 ]
+                    pred = pred add 1
+                ]
+            ]
+            block = block add 1
+        ]
+        pass = pass add 1
+    ]
+    = 0
+]
+
+fn ir_licm_find_preheader [str code, ptr int starts, int record_count, ptr int edges, int block_count, ptr int loop, int header] int [
+    int preheader = 0 sub 1
+    int pred = 0
+    while [pred lt block_count] [
+        int slot = ir_dom_slot pred, header, block_count
+        if [edges[slot] and loop[pred] eq 0] [
+            if [preheader ge 0] [ = 0 sub 1 ]
+            preheader = pred
+        ]
+        pred = pred add 1
+    ]
+    if [preheader lt 0] [ = 0 sub 1 ]
+
+    # Require an explicit unconditional branch to the header. This gives LICM
+    # an unambiguous insertion point immediately before the terminator.
+    int end = ir_cfg_block_end_record code, starts, record_count, preheader
+    if [end lt 0] [ = 0 sub 1 ]
+    str op = ir_index_field code, starts, end, 0
+    if [not str.eq op, 'branch'] [
+        sys.free op
+        = 0 sub 1
+    ]
+    str target = ir_index_field code, starts, end, 1
+    str header_label = ir_m2r_ssa_label_for_block code, starts, record_count, header
+    int ok = str.eq target, header_label
+    sys.free op
+    sys.free target
+    sys.free header_label
+    if [ok eq 0] [ = 0 sub 1 ]
+    = preheader
+]
+
+fn ir_licm_value_invariant [str defs, ptr int loop, str invariant, str value] int [
+    if [not ir_value_is_temp value] [ = 1 ]
+    str known = map_get invariant, value
+    if [str.eq known, '1'] [ = 1 ]
+    int block = ir_ud_def_block defs, value
+    if [block lt 0] [ = 1 ]
+    if [loop[block] eq 0] [ = 1 ]
+    = 0
+]
+
+fn ir_licm_operands_invariant [str defs, ptr int loop, str invariant, str op, str b, str c, str d] int [
+    if [str.eq op, 'truthy_int' or str.eq op, 'not_bool' or str.eq op, 'bool_to_int'] [
+        = ir_licm_value_invariant defs, loop, invariant, b
+    ]
+    if [str.eq op, 'int_to_float' or str.eq op, 'bool_to_float' or str.eq op, 'float_to_int'] [
+        = ir_licm_value_invariant defs, loop, invariant, b
+    ]
+    if [str.eq op, 'logic' or str.eq op, 'compare_int' or str.eq op, 'compare_bool' or str.eq op, 'arith_int'] [
+        int left = ir_licm_value_invariant defs, loop, invariant, c
+        int right = ir_licm_value_invariant defs, loop, invariant, d
+        = left and right
+    ]
+    = 0
+]
+
+fn ir_licm_mark_invariants [str code, ptr int starts, int record_count, str defs, ptr int loop, ptr int hoist] int [
+    int i = 0
+    while [i lt record_count] [ hoist[i] = 0 i = i add 1 ]
+    str invariant = ''
+
+    int pass = 0
+    while [pass lt record_count] [
+        int block = 0
+        i = 0
+        while [i lt record_count] [
+            str op = ir_index_field code, starts, i, 0
+            str a = ir_index_field code, starts, i, 1
+            str b = ir_index_field code, starts, i, 2
+            str c = ir_index_field code, starts, i, 3
+            str d = ir_index_field code, starts, i, 4
+            if [str.eq op, 'label'] [ block = block add 1 ]
+
+            if [loop[block] and hoist[i] eq 0 and ir_value_is_temp a] [
+                if [ir_licm_candidate op, b] [
+                    if [ir_licm_operands_invariant defs, loop, invariant, op, b, c, d] [
+                        hoist[i] = 1
+                        invariant = map_put invariant, a, '1'
+                    ]
+                ]
+            ]
+
+            sys.free op
+            sys.free a
+            sys.free b
+            sys.free c
+            sys.free d
+            i = i add 1
+        ]
+        pass = pass add 1
+    ]
+    = 0
+]
+
+fn ir_licm_hoist_count [ptr int hoist, int record_count] int [
+    int count = 0
+    int i = 0
+    while [i lt record_count] [
+        if [hoist[i]] [ count = count add 1 ]
+        i = i add 1
+    ]
+    = count
+]
+
+fn ir_licm_emit_marked [str code, ptr int starts, int record_count, ptr int hoist, str out] str [
+    str result = out
+    int i = 0
+    while [i lt record_count] [
+        if [hoist[i]] [
+            str line = ir_index_line code, starts, i
+            result = ir_append_owned result, line
+            result = ir_append_owned result, g_newline
+            sys.free line
+        ]
+        i = i add 1
+    ]
+    = result
+]
+
+fn ir_licm_move_once [str code] str [
+    int record_count = ir_index_record_count code
+    int index_slots = record_count add 1
+    ptr int starts = sys.alloc index_slots
+    ir_index_fill code, record_count, starts
+
+    int block_count = ir_dom_block_count code, starts, record_count
+    int matrix_size = block_count mul block_count
+    ptr int edges = sys.alloc matrix_size
+    ptr int dom = sys.alloc matrix_size
+    ptr int loop = sys.alloc block_count
+    ptr int backedge = sys.alloc 2
+    ptr int hoist = sys.alloc record_count
+    ir_dom_build_edges code, starts, record_count, block_count, edges
+    ir_dom_compute edges, block_count, dom
+
+    if [ir_licm_find_backedge edges, dom, block_count, backedge eq 0] [
+        str unchanged = str.slice code, 0, str.len code
+        sys.free starts
+        sys.free edges
+        sys.free dom
+        sys.free loop
+        sys.free backedge
+        sys.free hoist
+        = unchanged
+    ]
+
+    int tail = backedge[0]
+    int header = backedge[1]
+    ir_licm_build_loop edges, block_count, tail, header, loop
+    int preheader = ir_licm_find_preheader code, starts, record_count, edges, block_count, loop, header
+    if [preheader lt 0] [
+        str unchanged2 = str.slice code, 0, str.len code
+        sys.free starts
+        sys.free edges
+        sys.free dom
+        sys.free loop
+        sys.free backedge
+        sys.free hoist
+        = unchanged2
+    ]
+
+    str defs = ir_ud_collect_defs code, starts, record_count
+    ir_licm_mark_invariants code, starts, record_count, defs, loop, hoist
+    int move_count = ir_licm_hoist_count hoist, record_count
+    if [move_count eq 0] [
+        str unchanged3 = str.slice code, 0, str.len code
+        sys.free starts
+        sys.free edges
+        sys.free dom
+        sys.free loop
+        sys.free backedge
+        sys.free hoist
+        = unchanged3
+    ]
+
+    int insert_at = ir_cfg_block_end_record code, starts, record_count, preheader
+    str out = str.slice '', 0, 0
+    int i = 0
+    while [i lt record_count] [
+        if [i eq insert_at] [ out = ir_licm_emit_marked code, starts, record_count, hoist, out ]
+        if [hoist[i] eq 0] [
+            str line2 = ir_index_line code, starts, i
+            out = ir_append_owned out, line2
+            out = ir_append_owned out, g_newline
+            sys.free line2
+        ]
+        i = i add 1
+    ]
+
+    sys.free starts
+    sys.free edges
+    sys.free dom
+    sys.free loop
+    sys.free backedge
+    sys.free hoist
+    = out
+]
+
+fn ir_licm_optimize [str code] str [
+    # Re-run one-loop motion to cover multiple loops while keeping each rewrite
+    # simple. Fixed point is bounded by the original record count.
+    str current = str.slice code, 0, str.len code
+    int limit = ir_index_record_count code
+    int pass = 0
+    while [pass lt limit and g_fatal_error eq 0] [
+        str next = ir_licm_move_once current
+        if [str.eq next, current] [
+            sys.free current
+            = next
+        ]
+        sys.free current
+        current = next
+        pass = pass add 1
+    ]
+    = current
+]
