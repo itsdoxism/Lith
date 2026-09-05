@@ -39,11 +39,23 @@ fn main [int argc, ptr str argv] int [
     if [bytes.at binary, 2 ne 66] [ = 27 ]
     if [not bytes.ptr binary] [ = 28 ]
 
+    # Binary filesystem I/O must round-trip embedded NUL bytes unchanged.
+    str binary_path = '/tmp/lith-native-surfaces.bin'
+    if [fs.write_bytes binary_path, binary eq 0] [ = 40 ]
+    bytes loaded = fs.read_bytes binary_path
+    if [not loaded] [ = 41 ]
+    if [bytes.len loaded ne 3] [ = 42 ]
+    if [bytes.at loaded, 0 ne 65] [ = 43 ]
+    if [bytes.at loaded, 1 ne 0] [ = 44 ]
+    if [bytes.at loaded, 2 ne 66] [ = 45 ]
+    if [bytes.eq loaded, binary eq 0] [ = 46 ]
+
     str path_env = process.env 'PATH'
     if [not path_env] [ = 30 ]
     int status = process.run 'true'
     if [status ne 0] [ = 31 ]
 
+    bytes.free loaded
     bytes.free binary
     bytes.free raw
     bytes.free head
