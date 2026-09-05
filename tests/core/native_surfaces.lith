@@ -3,8 +3,8 @@ use bytes
 use process
 
 fn main [int argc, ptr str argv] int [
-    if [argc lt 1] [ = 9 ]
-    if [not argv[0]] [ = 8 ]
+    if [argc lt 1] [ = 1 ]
+    if [not argv[0]] [ = 2 ]
 
     str path = '/tmp/lith-native-surfaces.txt'
     int wrote = fs.write_text path, 'Lith bytes'
@@ -12,18 +12,43 @@ fn main [int argc, ptr str argv] int [
 
     str text = fs.read_text path
     if [not text] [ = 11 ]
-    if [bytes.len text ne 10] [ = 12 ]
-    if [bytes.at text, 0 ne 76] [ = 13 ]
 
-    str head = bytes.slice text, 0, 4
-    if [bytes.eq head, 'Lith' eq 0] [ = 14 ]
+    bytes raw = bytes.from_str text
+    if [not raw] [ = 12 ]
+    if [bytes.len raw ne 10] [ = 13 ]
+    if [bytes.at raw, 0 ne 76] [ = 14 ]
 
-    str joined = bytes.concat head, ' native'
-    if [bytes.eq joined, 'Lith native' eq 0] [ = 15 ]
+    bytes head = bytes.slice raw, 0, 4
+    bytes lith = bytes.from_str 'Lith'
+    if [bytes.eq head, lith eq 0] [ = 15 ]
+
+    bytes suffix = bytes.from_str ' native'
+    bytes joined = bytes.concat head, suffix
+    str joined_text = bytes.to_str joined
+    if [str.eq joined_text, 'Lith native' eq 0] [ = 16 ]
+
+    # A real byte buffer must preserve embedded zero bytes.
+    bytes binary = bytes.alloc 3
+    if [not binary] [ = 20 ]
+    if [bytes.set binary, 0, 65 eq 0] [ = 21 ]
+    if [bytes.set binary, 1, 0 eq 0] [ = 22 ]
+    if [bytes.set binary, 2, 66 eq 0] [ = 23 ]
+    if [bytes.len binary ne 3] [ = 24 ]
+    if [bytes.at binary, 0 ne 65] [ = 25 ]
+    if [bytes.at binary, 1 ne 0] [ = 26 ]
+    if [bytes.at binary, 2 ne 66] [ = 27 ]
+    if [not bytes.ptr binary] [ = 28 ]
 
     str path_env = process.env 'PATH'
-    if [not path_env] [ = 16 ]
+    if [not path_env] [ = 30 ]
     int status = process.run 'true'
-    if [status ne 0] [ = 17 ]
+    if [status ne 0] [ = 31 ]
+
+    bytes.free binary
+    bytes.free raw
+    bytes.free head
+    bytes.free lith
+    bytes.free suffix
+    bytes.free joined
     = 0
 ]
