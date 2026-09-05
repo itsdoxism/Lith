@@ -79,8 +79,6 @@ if ! grep -q ' phi i32 ' "$BRANCH_BODY"; then
     exit 1
 fi
 
-# Loop/back-edge mem2reg should reserve header phi values before rewriting the
-# body, then fill incoming edges after all predecessor out-values are known.
 LOOP_BODY="$BUILD/promoted_loop.ll"
 sed -n '/^define i32 @promoted_loop/,/^}/p' "$IR" > "$LOOP_BODY"
 if grep -q ' alloca ' "$LOOP_BODY"; then
@@ -101,9 +99,6 @@ if [ "$LOOP_PHI_COUNT" -lt 2 ]; then
     exit 1
 fi
 
-# This constant only becomes visible after mem2reg merges the two branch-local
-# stores. SCCP must fold the post-join compare and CFG pruning must remove the
-# false return path.
 SCCP_BODY="$BUILD/sccp_join_constant.ll"
 sed -n '/^define i32 @sccp_join_constant/,/^}/p' "$IR" > "$SCCP_BODY"
 grep -q 'ret i32 11' "$SCCP_BODY"
@@ -116,13 +111,27 @@ if grep -q 'icmp .* i32 7, 7' "$SCCP_BODY"; then
     exit 1
 fi
 
-# Dominator-aware GVN should compute input+1 once and reuse that SSA value for
-# the second identical expression. The final addition of left+right remains.
 GVN_BODY="$BUILD/gvn_duplicate.ll"
 sed -n '/^define i32 @gvn_duplicate/,/^}/p' "$IR" > "$GVN_BODY"
 GVN_ADD_COUNT=$(grep -c ' add i32 ' "$GVN_BODY" || true)
 if [ "$GVN_ADD_COUNT" -ne 2 ]; then
     echo "GVN expected two integer adds after CSE, found $GVN_ADD_COUNT" >&2
+    exit 1
+fi
+
+# LICM should move the loop-invariant base+3 calculation into the unique
+# preheader, before the generated while.cond label. The loop state additions
+# remain in the body.
+LICM_BODY="$BUILD/licm_loop.ll"
+sed -n '/^define i32 @licm_loop/,/^}/p' "$IR" > "$LICM_BODY"
+LICM_INV_LINE=$(grep -n ' add i32 .*3' "$LICM_BODY" | head -n 1 | cut -d: -f1 || true)
+LICM_COND_LINE=$(grep -n 'while\.cond\.' "$LICM_BODY" | head -n 1 | cut -d: -f1 || true)
+if [ -z "$LICM_INV_LINE" ] || [ -z "$LICM_COND_LINE" ]; then
+    echo 'LICM regression could not locate invariant expression or loop header' >&2
+    exit 1
+fi
+if [ "$LICM_INV_LINE" -ge "$LICM_COND_LINE" ]; then
+    echo 'LICM failed to hoist loop-invariant addition into preheader' >&2
     exit 1
 fi
 
@@ -216,6 +225,7 @@ grep -q 'fn ir_cfg_simplify_branch_to_next' compiler/src/36_ir_cfg_simplify.lith
 grep -q 'ir_cfg_thread_branches out' compiler/src/36_ir_cfg_simplify.lith
 grep -q 'ir_cfg_merge_blocks threaded' compiler/src/36_ir_cfg_simplify.lith
 grep -q 'ir_gvn_optimize merged' compiler/src/36_ir_cfg_simplify.lith
+grep -q 'ir_licm_optimize gvn' compiler/src/36_ir_cfg_simplify.lith
 grep -q 'compiler/src/36_ir_cfg_simplify.lith' Makefile
 grep -q 'fn ir_cfg_thread_branches' compiler/src/37_ir_cfg_merge.lith
 grep -q 'fn ir_cfg_merge_blocks' compiler/src/37_ir_cfg_merge.lith
@@ -225,5 +235,12 @@ grep -q 'fn ir_gvn_key' compiler/src/38_ir_gvn.lith
 grep -q 'ir_dom_dominates dom, block_count, previous_block, block' compiler/src/38_ir_gvn.lith
 grep -q 'fn ir_gvn_optimize' compiler/src/38_ir_gvn.lith
 grep -q 'compiler/src/38_ir_gvn.lith' Makefile
+grep -q 'fn ir_licm_find_backedge' compiler/src/39_ir_licm.lith
+grep -q 'ir_dom_dominates dom, block_count, header, tail' compiler/src/39_ir_licm.lith
+grep -q 'fn ir_licm_build_loop' compiler/src/39_ir_licm.lith
+grep -q 'fn ir_licm_find_preheader' compiler/src/39_ir_licm.lith
+grep -q 'fn ir_licm_mark_invariants' compiler/src/39_ir_licm.lith
+grep -q 'fn ir_licm_optimize' compiler/src/39_ir_licm.lith
+grep -q 'compiler/src/39_ir_licm.lith' Makefile
 
-echo 'Lith IR validator + verified optimizer/CFG/mem2reg/SCCP/GVN pipeline: passed'
+echo 'Lith IR validator + verified optimizer/CFG/mem2reg/SCCP/GVN/LICM pipeline: passed'
